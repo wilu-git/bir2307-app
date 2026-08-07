@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.core.auth import render_logout_control
+
 _TABS = [
     ("uploads", "📤 Uploads"),
     ("certificates", "📄 Certificates"),
@@ -26,3 +28,6 @@ def render_left_nav() -> None:
             ) and not is_active:
                 st.session_state["active_tab"] = tab_key
                 st.rerun()
+
+        st.divider()
+        render_logout_control()
