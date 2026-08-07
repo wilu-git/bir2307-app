@@ -1,0 +1,11 @@
+streamlit==1.40.1
+sqlalchemy==2.0.51
+pandas==2.2.3
+openpyxl==3.1.5
+reportlab==4.2.5
+pypdf==6.15.0
+loguru==0.7.2
+python-dotenv==1.0.1
+pytest==8.3.4
+black==24.10.0
+ruff==0.8.4
