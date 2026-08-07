@@ -6,9 +6,9 @@ Expanded Withholding Tax, generate the certificate PDF on the real official
 form, track status through to signed/received, and search/audit everything.
 
 Built with Streamlit + SQLite/SQLAlchemy + reportlab/pypdf, per the project
-spec (`BIR2307.md`). Business logic lives in `app/core/`; `app/pages/*.py`
-are thin wrappers around it, so swapping Streamlit for FastAPI+React later
-doesn't require rewriting the core.
+spec (`BIR2307.md`). Business logic lives in `app/core/`; `app/ui/*.py`
+are thin wrappers around it (rendering the 3-pane workspace), so swapping
+Streamlit for FastAPI+React later doesn't require rewriting the core.
 
 ## Setup
 
@@ -41,8 +41,9 @@ streamlit run app/main.py
 ```
 
 Open the URL Streamlit prints (default `http://localhost:8501`), sign in
-with `APP_PASSWORD`, and use the sidebar: **Upload** → **Certificates** →
-**Search** → **Logs**.
+with `APP_PASSWORD`, and use the left navigation panel: **Uploads** →
+**Certificates** → **Search** → **Logs**. Selecting an item in the middle
+list shows its details/PDF preview in the right-hand panel.
 
 ### Required first step: replace the placeholder payor record
 
