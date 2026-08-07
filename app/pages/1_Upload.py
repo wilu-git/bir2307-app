@@ -5,6 +5,13 @@ into every warning/error raised during that batch.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Pages run as independent top-level scripts on Streamlit Cloud, so each
+# needs the project root on sys.path for the `app.*` imports below.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import pandas as pd
 import streamlit as st
 
