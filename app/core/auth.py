@@ -24,6 +24,7 @@ def require_login() -> str:
     who performed an action (status_log.changed_by, event_logs.resolved_by).
     """
     if st.session_state.get("authenticated"):
+        _render_logout_button()
         return CURRENT_USER
 
     st.title("BIR 2307 Generator — Sign in")
@@ -37,3 +38,11 @@ def require_login() -> str:
             st.error("Incorrect password.")
     st.stop()
     raise RuntimeError("unreachable")  # st.stop() never returns; satisfies type checkers
+
+
+def _render_logout_button() -> None:
+    with st.sidebar:
+        st.caption(f"Signed in as {CURRENT_USER}")
+        if st.button("Log out"):
+            st.session_state.clear()
+            st.rerun()

@@ -7,6 +7,15 @@ concerns (keeps the door open to swap Streamlit for FastAPI+React later).
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Streamlit only puts this script's own directory on sys.path, so the
+# project root (needed for the `app.*` absolute imports below) has to be
+# added explicitly — otherwise this fails with "No module named 'app'"
+# on Streamlit Cloud, where we don't control how the interpreter is invoked.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import streamlit as st
 
 from app.core.auth import require_login
