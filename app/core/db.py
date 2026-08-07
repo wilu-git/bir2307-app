@@ -38,7 +38,8 @@ SEED_ATC_CODES: list[tuple[str, str, str]] = [
     ("WC120", "Income payments to certain contractors", "0.02"),
     (
         "WC158",
-        "Income payments to local/resident suppliers of goods " "(top withholding agents)",
+        "Income payments to local/resident suppliers of goods "
+        "(top withholding agents)",
         "0.01",
     ),
     (
@@ -82,7 +83,12 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    """Create all tables (if missing) and seed the payor + ATC codes (if empty)."""
+    """Create all tables (if missing) and seed the payor + ATC codes (if empty).
+
+    If `settings.demo_mode` is set, also seeds synthetic demo data (see
+    `core/demo_seed.py`) — never used for the real deployment, and a no-op
+    unless the database is completely empty.
+    """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     settings.generated_pdfs_dir.mkdir(parents=True, exist_ok=True)
@@ -92,12 +98,20 @@ def init_db() -> None:
         _seed_payor(session)
         session.commit()
 
+    if settings.demo_mode:
+        from app.core.demo_seed import seed_demo_data
+
+        with SessionLocal() as session:
+            seed_demo_data(session)
+
 
 def _seed_atc_codes(session: Session) -> None:
     existing = {code for (code,) in session.query(AtcCode.code).all()}
     for code, description, rate in SEED_ATC_CODES:
         if code not in existing:
-            session.add(AtcCode(code=code, description=description, default_rate=Decimal(rate)))
+            session.add(
+                AtcCode(code=code, description=description, default_rate=Decimal(rate))
+            )
 
 
 def _seed_payor(session: Session) -> None:
