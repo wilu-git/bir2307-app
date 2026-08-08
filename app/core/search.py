@@ -7,19 +7,13 @@ without a running app.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.core.models import Certificate, CertificateStatus, Payee
-
-_NON_DIGITS = re.compile(r"\D+")
-
-
-def _digits_only(value: str) -> str:
-    return _NON_DIGITS.sub("", value)
+from app.core.text_match import contains_ci, normalize_tin_digits
 
 
 @dataclass
@@ -54,13 +48,10 @@ def search_certificates(
 
     candidates = query.order_by(Certificate.id.desc()).all()
 
-    name_needle = name.strip().lower() if name and name.strip() else None
-    tin_needle = _digits_only(tin) if tin and tin.strip() else None
-
     def matches(cert: Certificate) -> bool:
-        if name_needle and name_needle not in cert.payee.registered_name.lower():
+        if not contains_ci(cert.payee.registered_name, name):
             return False
-        if tin_needle and tin_needle not in _digits_only(cert.payee.tin):
+        if tin and tin.strip() and normalize_tin_digits(tin) not in normalize_tin_digits(cert.payee.tin):
             return False
         return True
 
