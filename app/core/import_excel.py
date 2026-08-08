@@ -28,7 +28,6 @@ from app.core.computation import (
 from app.core.logging_config import log_event
 from app.core.models import (
     AtcCode,
-    CertificateStatus,
     EventCategory,
     EventSeverity,
     ImportBatch,
@@ -43,11 +42,10 @@ DEFAULT_SHEET_NAME = "BIR 2307"
 
 # Normalized-header -> internal field name. Headers are normalized (see
 # normalize_header) before lookup so embedded newlines in the real workbook
-# (e.g. "Signed Copy \nGoogle Drive") still match.
+# (e.g. "Signed Copy \nGoogle Drive") still match. Both "date accomplished"
+# (the real Favor Church tracker header) and "invoice date" (the official
+# BIR 2307 field name) map to the same internal field so either header works.
 COLUMN_MAP: dict[str, str] = {
-    "signed copy google drive": "signed_flag",
-    "not signed": "not_signed_flag",
-    "corporate email address": "email",
     "bill no.": "reference_no",
     "corporate name": "registered_name",
     "corporate address": "address",
@@ -60,18 +58,45 @@ COLUMN_MAP: dict[str, str] = {
     "amount paid": "uploaded_amount_paid",
     "amount at 2307": "uploaded_tax_base",
     "tax withheld": "uploaded_tax_withheld",
-    "status": "status_text",
-    "assigned to": "assigned_to",
-    "date accomplished": "date_accomplished",
-    "remarks": "remarks",
+    "date accomplished": "invoice_date",
+    "invoice date": "invoice_date",
 }
 OVERFLOW_PREFIX = "column "  # "Column 1".."Column 16" -> overflow_notes
 EXCLUDED_HEADERS = {"a", "column 39", "file name", "not subject to ewt"}
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
 # Fields `parse_row` cannot proceed without — a column-mapping UI must have
 # all four assigned to some source header before an import can run.
 MANDATORY_FIELDS = {"reference_no", "tin", "gross_amount", "atc_code"}
 
+<<<<<<< Updated upstream
+=======
+# Fields that actually feed the generated certificate — either drawn
+# directly (see core/pdf_generator.py) or required to compute a value that
+# is drawn (tax_type -> compute_tax_base -> tax_withheld). Column-mapping
+# auto-detection (mapping_profiles.suggest_mapping and the uploads tab's
+# default-mapping baseline) only pre-fills these; the rest of COLUMN_MAP
+# (total_billing, uploaded_tax_base, uploaded_amount_paid,
+# uploaded_tax_withheld — validation-only fields, never rendered on the
+# PDF) stays available for manual mapping but is never guessed.
+PDF_FIELDS: set[str] = {
+    "reference_no",
+    "tin",
+    "registered_name",
+    "address",
+    "zip_code",
+    "atc_code",
+    "tax_type",
+    "gross_amount",
+    "invoice_date",
+}
+
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 def normalize_header(header: object) -> str:
     """Collapse whitespace/newlines and lowercase for robust header matching."""
@@ -86,7 +111,6 @@ class ParsedRow:
     registered_name: str
     address: str | None
     zip_code: str | None
-    email: str | None
     tax_type: str
     atc_code: str
     total_billing: Decimal
@@ -94,13 +118,8 @@ class ParsedRow:
     uploaded_tax_base: Decimal | None
     uploaded_amount_paid: Decimal | None
     uploaded_tax_withheld: Decimal | None
-    assigned_to: str | None
-    date_accomplished: datetime | None
-    remarks: str | None
+    invoice_date: datetime | None
     overflow_notes: str | None
-    signed_flag: bool
-    not_signed_flag: bool
-    status_text: str | None
     raw_row: dict = field(default_factory=dict)
 
 
@@ -128,13 +147,6 @@ def _parse_decimal(value: object) -> Decimal | None:
         return Decimal(text)
     except InvalidOperation:
         return None
-
-
-def _parse_bool_flag(value: object) -> bool:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return False
-    text = str(value).strip().lower()
-    return text in {"1", "true", "yes", "x"}
 
 
 def _parse_date(value: object) -> datetime | None:
@@ -271,7 +283,6 @@ def parse_row(
         registered_name=registered_name,
         address=sanitize_text(_clean_str(mapped.get("address"))) or None,
         zip_code=sanitize_text(_clean_str(mapped.get("zip_code"))) or None,
-        email=sanitize_text(_clean_str(mapped.get("email"))) or None,
         tax_type=tax_type,
         atc_code=atc_code,
         total_billing=total_billing,
@@ -279,54 +290,12 @@ def parse_row(
         uploaded_tax_base=_parse_decimal(mapped.get("uploaded_tax_base")),
         uploaded_amount_paid=_parse_decimal(mapped.get("uploaded_amount_paid")),
         uploaded_tax_withheld=_parse_decimal(mapped.get("uploaded_tax_withheld")),
-        assigned_to=sanitize_text(_clean_str(mapped.get("assigned_to"))) or None,
-        date_accomplished=_parse_date(mapped.get("date_accomplished")),
-        remarks=sanitize_text(_clean_str(mapped.get("remarks"))) or None,
+        invoice_date=_parse_date(mapped.get("invoice_date")),
         overflow_notes="; ".join(overflow_parts) or None,
-        signed_flag=_parse_bool_flag(mapped.get("signed_flag")),
-        not_signed_flag=_parse_bool_flag(mapped.get("not_signed_flag")),
-        status_text=sanitize_text(_clean_str(mapped.get("status_text"))) or None,
         raw_row={
             k: (None if isinstance(v, float) and pd.isna(v) else str(v)) for k, v in raw_row.items()
         },
     )
-
-
-def derive_certificate_status(
-    signed_flag: bool, not_signed_flag: bool, status_text: str | None
-) -> tuple[CertificateStatus, bool]:
-    """Collapse the two boolean flags + free-text Status into one enum.
-
-    Returns (status, is_ambiguous). Ambiguous cases (both flags true, or
-    both false with no recognizable status text) default to DRAFT per spec
-    and are reported back to the caller so it can log a ROW_VALIDATION
-    warning — this function itself never logs, so it's testable in isolation.
-    """
-    text = (status_text or "").lower()
-
-    if signed_flag and not_signed_flag:
-        return CertificateStatus.DRAFT, True
-
-    if signed_flag:
-        return CertificateStatus.COMPLETED_SIGNED, False
-
-    if not_signed_flag:
-        if "forward" in text or "submit" in text:
-            return CertificateStatus.FORWARDED, False
-        if "not started" in text:
-            return CertificateStatus.DRAFT, False
-        if not text:
-            return CertificateStatus.DRAFT, True  # no clear status text
-        return CertificateStatus.FORWARDED, False
-
-    # Neither flag set.
-    if "complet" in text or "signed" in text:
-        return CertificateStatus.COMPLETED_SIGNED, False
-    if "forward" in text or "submit" in text:
-        return CertificateStatus.FORWARDED, False
-    if "not started" in text:
-        return CertificateStatus.DRAFT, False
-    return CertificateStatus.DRAFT, True  # no clear status text either way
 
 
 @dataclass
@@ -339,7 +308,7 @@ class DuplicateGroup:
 def find_duplicate_groups(rows: list[ParsedRow]) -> list[DuplicateGroup]:
     """Group rows sharing (reference_no, tin); classify each group.
 
-    Identical GROSS AMOUNT + TAX WITHHELD + Date Accomplished across the
+    Identical GROSS AMOUNT + TAX WITHHELD + Invoice Date across the
     group -> accidental duplicate entry (collapse to one transaction).
     Any difference -> legitimate multi-row billing for the same reference
     (merge into one certificate later, keep as separate transactions).
@@ -353,7 +322,7 @@ def find_duplicate_groups(rows: list[ParsedRow]) -> list[DuplicateGroup]:
         if len(indices) < 2:
             continue
         signatures = {
-            (rows[i].gross_amount, rows[i].uploaded_tax_withheld, rows[i].date_accomplished)
+            (rows[i].gross_amount, rows[i].uploaded_tax_withheld, rows[i].invoice_date)
             for i in indices
         }
         groups.append(
@@ -371,7 +340,6 @@ def _get_or_create_payee(session: Session, row: ParsedRow) -> Payee:
             registered_name=row.registered_name,
             address=row.address,
             zip_code=row.zip_code,
-            email=row.email,
             tax_type=tax_type_enum,
         )
         session.add(payee)
@@ -380,7 +348,6 @@ def _get_or_create_payee(session: Session, row: ParsedRow) -> Payee:
         payee.registered_name = row.registered_name or payee.registered_name
         payee.address = row.address or payee.address
         payee.zip_code = row.zip_code or payee.zip_code
-        payee.email = row.email or payee.email
         payee.tax_type = tax_type_enum
     return payee
 
@@ -561,9 +528,7 @@ def _import_single_row(session: Session, batch: ImportBatch, payor: Payor, row: 
         rate_applied=atc.default_rate,
         tax_withheld=tax_withheld,
         amount_paid=amount_paid,
-        assigned_to=row.assigned_to,
-        date_accomplished=row.date_accomplished,
-        remarks=row.remarks,
+        invoice_date=row.invoice_date,
         overflow_notes=row.overflow_notes,
         raw_row_json=json.dumps(row.raw_row, default=str),
     )
@@ -580,24 +545,6 @@ def _import_single_row(session: Session, batch: ImportBatch, payor: Payor, row: 
                 f"spreadsheet by more than ₱0.01 ({len(mismatches)} field(s))."
             ),
             technical_detail="; ".join(mismatches),
-            batch_id=batch.id,
-            transaction_id=transaction.id,
-        )
-
-    _, ambiguous = derive_certificate_status(row.signed_flag, row.not_signed_flag, row.status_text)
-    if ambiguous:
-        log_event(
-            session,
-            category=EventCategory.ROW_VALIDATION,
-            severity=EventSeverity.WARNING,
-            message=(
-                f"Row {row.row_number}: signed/not-signed flags or status text are "
-                "ambiguous or contradictory — defaulted to draft."
-            ),
-            technical_detail=(
-                f"signed_flag={row.signed_flag} not_signed_flag={row.not_signed_flag} "
-                f"status_text={row.status_text!r}"
-            ),
             batch_id=batch.id,
             transaction_id=transaction.id,
         )

@@ -209,9 +209,8 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     Transactions are grouped by ATC code (one row per code — spec's
     "multiple ATC line items per certificate", generated dynamically, not
     a fixed number of slots) and each transaction's gross amount is
-    bucketed into its quarter month from `date_accomplished`, falling
-    back to the period's first month when a transaction has no recorded
-    date (the confirmed column mapping has no separate "date paid" field).
+    bucketed into its quarter month from `invoice_date`, falling back to
+    the period's first month when a transaction has no recorded date.
     """
     payee = certificate.payee
     payor = certificate.payor
@@ -312,7 +311,7 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
         month_amounts = [Decimal("0"), Decimal("0"), Decimal("0")]
         tax_for_code = Decimal("0")
         for t in txs:
-            month_idx = _month_index_in_quarter(t.date_accomplished, certificate.period_start)
+            month_idx = _month_index_in_quarter(t.invoice_date, certificate.period_start)
             month_amounts[month_idx] += t.gross_amount
             tax_for_code += t.tax_withheld
         row_total = sum(month_amounts, Decimal("0"))
@@ -359,8 +358,8 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     return out_path
 
 
-def _month_index_in_quarter(date_accomplished, period_start) -> int:
-    if date_accomplished is None:
+def _month_index_in_quarter(invoice_date, period_start) -> int:
+    if invoice_date is None:
         return 0
-    offset = date_accomplished.month - period_start.month
+    offset = invoice_date.month - period_start.month
     return offset if 0 <= offset <= 2 else 0

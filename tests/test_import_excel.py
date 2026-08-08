@@ -4,19 +4,14 @@ import pytest
 
 from app.core.import_excel import (
     RowParseError,
-    derive_certificate_status,
     find_duplicate_groups,
     normalize_header,
     parse_row,
 )
-from app.core.models import CertificateStatus
 
 
 def _raw_row(**overrides) -> dict:
     base = {
-        "signed copy google drive": "0",
-        "not signed": "1",
-        "corporate email address": "vendor@example.com",
         "bill no.": "FAV20260000000001",
         "corporate name": "SAMPLE VENDOR INC.",
         "corporate address": "123 Sample St, Quezon City",
@@ -30,10 +25,7 @@ def _raw_row(**overrides) -> dict:
         "amount paid": "22800.0",
         "amount at 2307": "24000",
         "tax withheld": "1200",
-        "status": "submitted - Trisha",
-        "assigned to": "Trisha",
         "date accomplished": None,
-        "remarks": None,
     }
     base.update(overrides)
     return base
@@ -50,8 +42,6 @@ def test_parse_row_maps_confirmed_columns():
     assert row.atc_code == "WI100"
     assert row.tax_type == "NONVAT"
     assert row.gross_amount == Decimal("24000.0")
-    assert row.not_signed_flag is True
-    assert row.signed_flag is False
 
 
 def test_parse_row_uppercases_lowercase_atc_code():
@@ -108,39 +98,3 @@ def test_duplicate_groups_different_tin_same_bill_no_not_grouped():
         parse_row(_raw_row(**{"tin number": "002-116-558-000"}), row_number=3),
     ]
     assert find_duplicate_groups(rows) == []
-
-
-def test_derive_status_signed_flag_wins():
-    status, ambiguous = derive_certificate_status(True, False, "")
-    assert status == CertificateStatus.COMPLETED_SIGNED
-    assert ambiguous is False
-
-
-def test_derive_status_both_flags_true_is_ambiguous():
-    status, ambiguous = derive_certificate_status(True, True, "")
-    assert status == CertificateStatus.DRAFT
-    assert ambiguous is True
-
-
-def test_derive_status_not_signed_with_forwarded_text():
-    status, ambiguous = derive_certificate_status(False, True, "Forwarded to Kim")
-    assert status == CertificateStatus.FORWARDED
-    assert ambiguous is False
-
-
-def test_derive_status_not_signed_with_submitted_text():
-    status, ambiguous = derive_certificate_status(False, True, "submitted - Danna")
-    assert status == CertificateStatus.FORWARDED
-    assert ambiguous is False
-
-
-def test_derive_status_no_flags_no_text_is_ambiguous_draft():
-    status, ambiguous = derive_certificate_status(False, False, None)
-    assert status == CertificateStatus.DRAFT
-    assert ambiguous is True
-
-
-def test_derive_status_no_flags_not_started_text():
-    status, ambiguous = derive_certificate_status(False, False, "Not started")
-    assert status == CertificateStatus.DRAFT
-    assert ambiguous is False

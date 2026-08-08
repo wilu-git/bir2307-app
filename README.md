@@ -76,7 +76,7 @@ black app tests     # formatting
 ruff check app tests
 ```
 
-59 tests cover EWT computation (against real, empirically-verified rates),
+62 tests cover EWT computation (against real, empirically-verified rates),
 TIN validation, the duplicate-BILL-NO. collapse/merge logic, computation
 mismatch flagging, certificate grouping/idempotency, status transitions,
 event-log resolution, and certificate search.
@@ -134,12 +134,8 @@ covered, or resolved differently than a first read might suggest:
   (a certificate with many more than ~12 ATC line items in one quarter, or
   unusually long payee/payor names).
 - **Certificate "period" is the calendar quarter** containing each
-  transaction's `Date Accomplished`, falling back to the transaction's
-  import timestamp when that's blank — the confirmed column mapping has no
-  separate "date paid" field to use instead. Most rows in the real sheet
-  have `Date Accomplished` blank, so most certificates end up anchored to
-  when they were imported rather than when the payment was actually made;
-  revisit this if a cleaner payment-date field becomes available.
+  transaction's `Invoice Date`, falling back to the transaction's import
+  timestamp when that's blank.
 - **The importer targets a sheet named "BIR 2307" by name** inside the
   uploaded workbook (configurable in the Upload page), not just the first
   sheet — the real Favor Church export is a 16-sheet workbook (payroll,

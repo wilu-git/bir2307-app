@@ -81,6 +81,11 @@ SEED_PAYOR = {
 engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
 # `create_all` only creates missing tables — it never alters an
 # already-existing one, so indexes added to `transactions`/`certificates`
 # after those tables first existed need to be created explicitly. These
@@ -88,11 +93,19 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # pre-existing database, since there's no migration framework here.
 _INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS ix_transactions_payee_id ON transactions(payee_id)",
+<<<<<<< Updated upstream
     "CREATE INDEX IF NOT EXISTS ix_transactions_date_accomplished ON transactions(date_accomplished)",
+=======
+    "CREATE INDEX IF NOT EXISTS ix_transactions_invoice_date ON transactions(invoice_date)",
+>>>>>>> Stashed changes
     "CREATE INDEX IF NOT EXISTS ix_certificates_payee_id ON certificates(payee_id)",
     "CREATE INDEX IF NOT EXISTS ix_certificates_status ON certificates(status)",
 ]
 
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 def init_db() -> None:
     """Create all tables (if missing) and seed the payor + ATC codes (if empty).

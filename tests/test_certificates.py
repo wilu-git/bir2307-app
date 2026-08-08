@@ -2,7 +2,6 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.core.certificates import (
-    _status_from_transaction,
     group_ungrouped_transactions,
     quarter_bounds,
     transition_status,
@@ -40,7 +39,7 @@ def test_quarter_bounds_q4_year_end():
     assert end == datetime(2026, 12, 31)
 
 
-def _make_transaction(session, *, payee_tin="307-265-187-000", raw_row_json=None) -> Transaction:
+def _make_transaction(session, *, payee_tin="307-265-187-000") -> Transaction:
     payee = session.query(Payee).filter_by(tin=payee_tin).one_or_none()
     if payee is None:
         payee = Payee(tin=payee_tin, registered_name="Test Payee", tax_type=TaxType.NONVAT)
@@ -63,8 +62,7 @@ def _make_transaction(session, *, payee_tin="307-265-187-000", raw_row_json=None
         rate_applied=atc.default_rate,
         tax_withheld=Decimal("50"),
         amount_paid=Decimal("950"),
-        date_accomplished=datetime(2026, 8, 1),
-        raw_row_json=raw_row_json,
+        invoice_date=datetime(2026, 8, 1),
     )
     session.add(transaction)
     session.flush()
@@ -72,13 +70,8 @@ def _make_transaction(session, *, payee_tin="307-265-187-000", raw_row_json=None
 
 
 def test_group_ungrouped_creates_one_certificate_per_payee_period(session):
-    import json
-
-    raw = json.dumps(
-        {"signed copy google drive": "0", "not signed": "1", "status": "Forwarded to Kim"}
-    )
-    _make_transaction(session, raw_row_json=raw)
-    _make_transaction(session, raw_row_json=raw)
+    _make_transaction(session)
+    _make_transaction(session)
     session.commit()
 
     certs = group_ungrouped_transactions(session)
@@ -86,7 +79,7 @@ def test_group_ungrouped_creates_one_certificate_per_payee_period(session):
     cert = certs[0]
     assert cert.total_gross == Decimal("2000")
     assert cert.total_tax_withheld == Decimal("100")
-    assert cert.status == CertificateStatus.FORWARDED
+    assert cert.status == CertificateStatus.DRAFT
 
 
 def test_group_ungrouped_is_idempotent_no_duplicate_certificates(session):
@@ -101,20 +94,6 @@ def test_group_ungrouped_is_idempotent_no_duplicate_certificates(session):
     from app.core.models import Certificate
 
     assert session.query(Certificate).count() == 1
-
-
-def test_status_from_transaction_completed_signed():
-    import json
-
-    t = Transaction(
-        raw_row_json=json.dumps({"signed copy google drive": "1", "not signed": "0", "status": ""})
-    )
-    assert _status_from_transaction(t) == CertificateStatus.COMPLETED_SIGNED
-
-
-def test_status_from_transaction_no_raw_row_defaults_draft():
-    t = Transaction(raw_row_json=None)
-    assert _status_from_transaction(t) == CertificateStatus.DRAFT
 
 
 def _make_certificate(session) -> Certificate:
