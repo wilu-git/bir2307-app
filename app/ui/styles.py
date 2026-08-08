@@ -21,14 +21,6 @@ TEXT_MUTED = "#6B7280"
 
 _CSS = f"""
 <style>
-/* Left nav: full-width, tightly stacked buttons that read as nav items */
-div.st-key-left_nav div[data-testid="stButton"] button {{
-    justify-content: flex-start;
-    text-align: left;
-    border-radius: 8px;
-    margin-bottom: 4px;
-    font-weight: 500;
-}}
 div[data-testid="stButton"] button[kind="primary"] {{
     background-color: {ACCENT};
     border-color: {ACCENT};
@@ -43,7 +35,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     border-radius: 10px !important;
     border-color: {BORDER} !important;
 }}
-div.st-key-card_selected div[data-testid="stVerticalBlockBorderWrapper"] {{
+div.st-key-card_selected_payees div[data-testid="stVerticalBlockBorderWrapper"],
+div.st-key-card_selected_uploads div[data-testid="stVerticalBlockBorderWrapper"],
+div.st-key-card_selected_logs div[data-testid="stVerticalBlockBorderWrapper"] {{
     border-color: {ACCENT} !important;
     border-width: 2px !important;
     box-shadow: 0 1px 3px rgba(37, 99, 235, 0.15);
@@ -64,8 +58,13 @@ div.st-key-card_selected div[data-testid="stVerticalBlockBorderWrapper"] {{
 .status-badge--warning {{ background: #FEF3C7; color: #B45309; }}
 .status-badge--error   {{ background: #FEE2E2; color: #B91C1C; }}
 
-/* Scrollable list containers keep their own scrollbar, not the page's */
-div.st-key-middle_list {{
+/* Scrollable list containers keep their own scrollbar, not the page's.
+   One rule per tab's list container — element keys must be unique across
+   the whole app now that st.tabs() renders every tab's body each rerun
+   (unlike the old if/elif dispatch, which only ever rendered one). */
+div.st-key-payees_list,
+div.st-key-uploads_list,
+div.st-key-logs_list {{
     padding-right: 4px;
 }}
 </style>

@@ -11,13 +11,20 @@ from __future__ import annotations
 import streamlit as st
 
 _DEFAULTS = {
-    "active_tab": "uploads",
+    "selected_payee": None,
+    # Which certificate's expander is open within the selected payee's
+    # detail pane (was previously "the one globally-selected certificate").
     "selected_certificate": None,
     "selected_upload": None,
-    "selected_search_result": None,
     "selected_log": None,
-    "search_query": {"name": "", "tin": "", "date_range": (), "status": "(all)"},
-    "search_page": 1,
+    "payee_filters": {
+        "name": "",
+        "tin": "",
+        "quarter": "(all)",
+        "date_range": (),
+        "status": "(all)",
+    },
+    "upload_mapping_draft": {},
     "logs_page": 1,
     "logs_filters": {"category": "(all)", "severity": "(all)", "unresolved_only": True},
 }

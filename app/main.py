@@ -1,12 +1,11 @@
-"""Streamlit entrypoint: password gate, DB init, and the 3-pane workspace.
+"""Streamlit entrypoint: password gate, DB init, and the tabbed workspace.
 
 Single-script by design. Streamlit auto-renders its own sidebar page-nav
-for anything under app/pages/, unconditionally — that can't coexist with
-an in-page left-nav being the primary navigation, so this app has no
-pages/ directory at all. All four sections (Uploads, Certificates, Search,
-Logs) are dispatched from here based on st.session_state["active_tab"],
-each rendering into the middle/right columns of one persistent 3-pane
-layout. Business logic still lives entirely in app/core/ — this file and
+for anything under app/pages/, unconditionally — this app has no pages/
+directory at all so its own chrome stays in full control. Navigation is
+native `st.tabs()` (there is no sidebar); each of the three sections
+(Payees, Uploads, Logs) renders into its own 2-pane (list/detail) layout.
+Business logic still lives entirely in app/core/ — this file and
 app/ui/*.py only wire widgets to it.
 """
 
@@ -26,13 +25,12 @@ import streamlit as st
 from app.core.auth import require_login
 from app.core.db import SessionLocal, init_db
 from app.core.logging_config import configure_logging
-from app.ui.layout import render_app_header, render_three_pane
-from app.ui.nav import render_left_nav
+from app.ui.layout import render_app_header, render_two_pane
+from app.ui.nav import render_top_tabs
 from app.ui.state import init_session_state
 from app.ui.styles import inject_css
-from app.ui.tabs.certificates_tab import render_certificates_tab
 from app.ui.tabs.logs_tab import render_logs_tab
-from app.ui.tabs.search_tab import render_search_tab
+from app.ui.tabs.payees_tab import render_payees_tab
 from app.ui.tabs.uploads_tab import render_uploads_tab
 
 st.set_page_config(page_title="BIR 2307 Generator", page_icon="🧾", layout="wide")
@@ -46,16 +44,16 @@ inject_css()
 render_app_header()
 
 with SessionLocal() as session:
-    left, middle, right = render_three_pane()
-    with left:
-        render_left_nav()
+    tab_payees, tab_uploads, tab_logs = render_top_tabs()
 
-    tab = st.session_state["active_tab"]
-    if tab == "uploads":
-        render_uploads_tab(session, current_user, middle, right)
-    elif tab == "certificates":
-        render_certificates_tab(session, current_user, middle, right)
-    elif tab == "search":
-        render_search_tab(session, middle, right)
-    elif tab == "logs":
-        render_logs_tab(session, current_user, middle, right)
+    with tab_payees:
+        list_col, detail_col = render_two_pane()
+        render_payees_tab(session, current_user, list_col, detail_col)
+
+    with tab_uploads:
+        list_col, detail_col = render_two_pane()
+        render_uploads_tab(session, current_user, list_col, detail_col)
+
+    with tab_logs:
+        list_col, detail_col = render_two_pane()
+        render_logs_tab(session, current_user, list_col, detail_col)

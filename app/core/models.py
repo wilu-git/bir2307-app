@@ -78,6 +78,9 @@ class Payee(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="payee")
+    certificates: Mapped[list["Certificate"]] = relationship(back_populates="payee")
+
 
 class Payor(Base):
     __tablename__ = "payors"
@@ -117,7 +120,7 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id"))
-    payee_id: Mapped[int] = mapped_column(ForeignKey("payees.id"))
+    payee_id: Mapped[int] = mapped_column(ForeignKey("payees.id"), index=True)
     payor_id: Mapped[int] = mapped_column(ForeignKey("payors.id"))
     reference_no: Mapped[str] = mapped_column(String(100), index=True)
     atc_code: Mapped[str] = mapped_column(ForeignKey("atc_codes.code"))
@@ -128,14 +131,14 @@ class Transaction(Base):
     tax_withheld: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     assigned_to: Mapped[str | None] = mapped_column(String(255), default=None)
-    date_accomplished: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    date_accomplished: Mapped[datetime | None] = mapped_column(DateTime, default=None, index=True)
     remarks: Mapped[str | None] = mapped_column(Text, default=None)
     overflow_notes: Mapped[str | None] = mapped_column(Text, default=None)
     raw_row_json: Mapped[str | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     batch: Mapped["ImportBatch"] = relationship(back_populates="transactions")
-    payee: Mapped["Payee"] = relationship()
+    payee: Mapped["Payee"] = relationship(back_populates="transactions")
     payor: Mapped["Payor"] = relationship()
 
 
@@ -143,14 +146,14 @@ class Certificate(Base):
     __tablename__ = "certificates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    payee_id: Mapped[int] = mapped_column(ForeignKey("payees.id"))
+    payee_id: Mapped[int] = mapped_column(ForeignKey("payees.id"), index=True)
     payor_id: Mapped[int] = mapped_column(ForeignKey("payors.id"))
     period_start: Mapped[datetime] = mapped_column(DateTime)
     period_end: Mapped[datetime] = mapped_column(DateTime)
     total_gross: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     total_tax_withheld: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     status: Mapped[CertificateStatus] = mapped_column(
-        Enum(CertificateStatus), default=CertificateStatus.DRAFT
+        Enum(CertificateStatus), default=CertificateStatus.DRAFT, index=True
     )
     pdf_unsigned_path: Mapped[str | None] = mapped_column(String(500), default=None)
     pdf_signed_path: Mapped[str | None] = mapped_column(String(500), default=None)
@@ -160,7 +163,7 @@ class Certificate(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    payee: Mapped["Payee"] = relationship()
+    payee: Mapped["Payee"] = relationship(back_populates="certificates")
     payor: Mapped["Payor"] = relationship()
     transaction_links: Mapped[list["CertificateTransaction"]] = relationship(
         back_populates="certificate"
@@ -206,3 +209,24 @@ class EventLog(Base):
     resolved_by: Mapped[str | None] = mapped_column(String(255), default=None)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     resolution_note: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class ImportColumnMapping(Base):
+    """A saved, reusable Excel column mapping profile.
+
+    `mapping` is the same shape as `import_excel.COLUMN_MAP`: normalized
+    source header -> internal field name. Stored whole as JSON (mirrors the
+    `raw_row_json` precedent) since a profile is always read/written as one
+    unit, never queried by individual header.
+    """
+
+    __tablename__ = "import_column_mappings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    sheet_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    mapping: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

@@ -59,7 +59,7 @@ def render_logs_tab(session, current_user, middle, right) -> None:
         if not events:
             st.info("No log entries match these filters.")
         else:
-            with st.container(height=420, key="middle_list"):
+            with st.container(height=420, key="logs_list"):
                 for event in events:
                     title = event.message if len(event.message) <= 70 else event.message[:67] + "…"
                     if event.resolved_at:
@@ -70,6 +70,7 @@ def render_logs_tab(session, current_user, middle, right) -> None:
                         badge=(event.severity.value, _SEVERITY_VARIANT[event.severity.value]),
                         is_selected=st.session_state["selected_log"] == event.id,
                         key=f"log_{event.id}",
+                        list_id="logs",
                     )
                     if clicked:
                         st.session_state["selected_log"] = event.id
