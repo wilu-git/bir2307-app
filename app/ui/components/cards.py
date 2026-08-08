@@ -20,15 +20,18 @@ def render_selectable_card(
     badge: tuple[str, str] | None,
     is_selected: bool,
     key: str,
+    list_id: str,
     button_label: str = "View details",
 ) -> bool:
     """Renders one bordered card; returns True the run its button is clicked.
 
-    The selected card gets the fixed container key "card_selected" so
-    styles.py can highlight it — safe because at most one card in a given
-    list is selected at a time, so the key stays unique app-wide.
+    The selected card gets the fixed container key f"card_selected_{list_id}"
+    so styles.py can highlight it. `list_id` must be unique per list (e.g.
+    "payees"/"uploads"/"logs") — st.tabs() renders every tab's body on every
+    rerun, so more than one list can have a selected card at once, and
+    Streamlit element keys must be unique across the whole app.
     """
-    container_key = "card_selected" if is_selected else f"card_{key}"
+    container_key = f"card_selected_{list_id}" if is_selected else f"card_{key}"
     with st.container(border=True, key=container_key):
         st.markdown(f"**{title}**")
         if subtitle:

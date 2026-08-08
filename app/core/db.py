@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -81,6 +81,18 @@ SEED_PAYOR = {
 engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
+# `create_all` only creates missing tables — it never alters an
+# already-existing one, so indexes added to `transactions`/`certificates`
+# after those tables first existed need to be created explicitly. These
+# statements are safe to run on every startup, on both a fresh and a
+# pre-existing database, since there's no migration framework here.
+_INDEX_STATEMENTS = [
+    "CREATE INDEX IF NOT EXISTS ix_transactions_payee_id ON transactions(payee_id)",
+    "CREATE INDEX IF NOT EXISTS ix_transactions_date_accomplished ON transactions(date_accomplished)",
+    "CREATE INDEX IF NOT EXISTS ix_certificates_payee_id ON certificates(payee_id)",
+    "CREATE INDEX IF NOT EXISTS ix_certificates_status ON certificates(status)",
+]
+
 
 def init_db() -> None:
     """Create all tables (if missing) and seed the payor + ATC codes (if empty).
@@ -93,6 +105,9 @@ def init_db() -> None:
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     settings.generated_pdfs_dir.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        for statement in _INDEX_STATEMENTS:
+            conn.execute(text(statement))
     with SessionLocal() as session:
         _seed_atc_codes(session)
         _seed_payor(session)

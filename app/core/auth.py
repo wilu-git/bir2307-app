@@ -40,10 +40,10 @@ def require_login() -> str:
 def render_logout_control() -> None:
     """Renders inline wherever called — the caller decides placement.
 
-    Kept out of require_login() itself: that runs before the app's 3-pane
-    layout exists, so the logout control is rendered later by app/ui/nav.py
-    instead, once the left-nav column is available (staying out of
-    Streamlit's default st.sidebar, per the redesign's layout goal).
+    Kept out of require_login() itself: that runs before the app's page
+    chrome exists. Called from app/ui/layout.py's render_app_header()
+    instead, once the header row is available (staying out of Streamlit's
+    default st.sidebar, per the app's layout goal — there is no sidebar).
     """
     st.caption(f"Signed in as {CURRENT_USER}")
     if st.button("Log out", use_container_width=True):

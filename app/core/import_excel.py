@@ -68,6 +68,10 @@ COLUMN_MAP: dict[str, str] = {
 OVERFLOW_PREFIX = "column "  # "Column 1".."Column 16" -> overflow_notes
 EXCLUDED_HEADERS = {"a", "column 39", "file name", "not subject to ewt"}
 
+# Fields `parse_row` cannot proceed without — a column-mapping UI must have
+# all four assigned to some source header before an import can run.
+MANDATORY_FIELDS = {"reference_no", "tin", "gross_amount", "atc_code"}
+
 
 def normalize_header(header: object) -> str:
     """Collapse whitespace/newlines and lowercase for robust header matching."""
@@ -157,7 +161,24 @@ def _parse_date(value: object) -> datetime | None:
     return None
 
 
-def read_source_rows(file, sheet_name: str = DEFAULT_SHEET_NAME) -> list[dict]:
+def _read_normalized_dataframe(file, sheet_name: str) -> pd.DataFrame:
+    """Read `sheet_name` and normalize its column headers. Shared by
+    `read_source_rows` and `detect_headers` so both see the same headers."""
+    df = pd.read_excel(file, sheet_name=sheet_name, header=0, dtype=object)
+    df.columns = [normalize_header(c) for c in df.columns]
+    return df
+
+
+def detect_headers(file, sheet_name: str = DEFAULT_SHEET_NAME) -> list[str]:
+    """Normalized header names found in `sheet_name`, in sheet order — used
+    by the column-mapping UI to show what's actually in the uploaded file."""
+    df = _read_normalized_dataframe(file, sheet_name)
+    return list(df.columns)
+
+
+def read_source_rows(
+    file, sheet_name: str = DEFAULT_SHEET_NAME, column_map: dict[str, str] = COLUMN_MAP
+) -> list[dict]:
     """Read `sheet_name` from the uploaded workbook, normalizing headers.
 
     `file` is anything pandas.read_excel accepts (path or file-like buffer).
@@ -170,13 +191,18 @@ def read_source_rows(file, sheet_name: str = DEFAULT_SHEET_NAME) -> list[dict]:
     "TOTAL AMOUNT" subtotal rows and trailing blank template rows, and
     because "Column 39"/"FILE NAME" auto-populate on every row (even blank
     ones), a naive all-cells-empty check doesn't catch them. A row missing
-    BOTH `BILL NO.` and `TIN NUMBER` can't be a real transaction — nothing
-    in this app can attribute it to a payee — so it's dropped before
-    parsing instead of being logged as a scary error for a non-technical
-    user to triage.
+    both the column mapped to `reference_no` and the column mapped to `tin`
+    can't be a real transaction — nothing in this app can attribute it to a
+    payee — so it's dropped before parsing instead of being logged as a
+    scary error for a non-technical user to triage. Which source columns
+    those are is resolved from `column_map` (not hardcoded to "bill no."/
+    "tin number") so a remapped upload's blank-row filter stays in sync
+    with wherever the user pointed those two fields.
     """
-    df = pd.read_excel(file, sheet_name=sheet_name, header=0, dtype=object)
-    df.columns = [normalize_header(c) for c in df.columns]
+    df = _read_normalized_dataframe(file, sheet_name)
+
+    reference_header = next((h for h, f in column_map.items() if f == "reference_no"), None)
+    tin_header = next((h for h, f in column_map.items() if f == "tin"), None)
 
     def _is_blank(value: object) -> bool:
         return (
@@ -188,13 +214,17 @@ def read_source_rows(file, sheet_name: str = DEFAULT_SHEET_NAME) -> list[dict]:
     rows: list[dict] = []
     for _, series in df.iterrows():
         row = series.to_dict()
-        if _is_blank(row.get("bill no.")) and _is_blank(row.get("tin number")):
+        reference_blank = reference_header is None or _is_blank(row.get(reference_header))
+        tin_blank = tin_header is None or _is_blank(row.get(tin_header))
+        if reference_blank and tin_blank:
             continue
         rows.append(row)
     return rows
 
 
-def parse_row(raw_row: dict, row_number: int) -> ParsedRow:
+def parse_row(
+    raw_row: dict, row_number: int, column_map: dict[str, str] = COLUMN_MAP
+) -> ParsedRow:
     """Map one raw spreadsheet row to a ParsedRow. Raises RowParseError on
     missing required fields (reference_no, tin, gross_amount, atc_code)."""
     mapped: dict[str, object] = {}
@@ -208,7 +238,7 @@ def parse_row(raw_row: dict, row_number: int) -> ParsedRow:
                 if text:
                     overflow_parts.append(text)
             continue
-        field_name = COLUMN_MAP.get(header)
+        field_name = column_map.get(header)
         if field_name:
             mapped[field_name] = value
 
@@ -361,12 +391,18 @@ def import_workbook(
     filename: str,
     uploaded_by: str,
     sheet_name: str = DEFAULT_SHEET_NAME,
+    column_map: dict[str, str] = COLUMN_MAP,
 ) -> ImportBatch:
     """Full ingest pipeline: parse -> dedup-classify -> recompute -> persist.
 
     Never raises on a single bad row (logged and skipped instead); the only
     exceptions that propagate are ones that mean the file itself can't be
     read at all (wrong sheet name, corrupt workbook), logged as FILE_PARSE.
+
+    `column_map` defaults to the module-level `COLUMN_MAP` so unmodified
+    callers (demo seeding, tests) behave exactly as before; pass a
+    different mapping (see `core/mapping_profiles.py`) for a spreadsheet
+    whose columns don't match that default.
     """
     payor = session.query(Payor).first()
     if payor is None:
@@ -377,7 +413,7 @@ def import_workbook(
     session.flush()
 
     try:
-        raw_rows = read_source_rows(file, sheet_name=sheet_name)
+        raw_rows = read_source_rows(file, sheet_name=sheet_name, column_map=column_map)
     except Exception as exc:  # file-level failure: nothing to import
         log_event(
             session,
@@ -396,7 +432,7 @@ def import_workbook(
     for idx, raw in enumerate(raw_rows):
         row_number = idx + 2  # +1 for 0-index, +1 for header row
         try:
-            parsed_rows.append(parse_row(raw, row_number))
+            parsed_rows.append(parse_row(raw, row_number, column_map=column_map))
         except RowParseError as exc:
             batch.error_count += 1
             log_event(

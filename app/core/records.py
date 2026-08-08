@@ -10,7 +10,6 @@ audit intent already applied to certificate status changes.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -18,8 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.logging_config import log_event
 from app.core.models import EventCategory, EventSeverity, Payee, Payor, TaxType
 from app.core.security import is_valid_tin, normalize_tin, sanitize_text
-
-_NON_DIGITS_RE = re.compile(r"\D+")
+from app.core.text_match import contains_ci, normalize_tin_digits
 
 
 class DuplicateTinError(ValueError):
@@ -55,13 +53,11 @@ def search_payees(
     """Combinable name-substring / digits-only-TIN-substring filter over payees,
     matching the search behavior already used for certificates in core/search.py."""
     candidates = session.query(Payee).order_by(Payee.registered_name).all()
-    name_needle = name.strip().lower() if name and name.strip() else None
-    tin_needle = _NON_DIGITS_RE.sub("", tin) if tin and tin.strip() else None
 
     def matches(payee: Payee) -> bool:
-        if name_needle and name_needle not in payee.registered_name.lower():
+        if not contains_ci(payee.registered_name, name):
             return False
-        if tin_needle and tin_needle not in _NON_DIGITS_RE.sub("", payee.tin):
+        if tin and tin.strip() and normalize_tin_digits(tin) not in normalize_tin_digits(payee.tin):
             return False
         return True
 

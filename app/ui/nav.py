@@ -1,33 +1,13 @@
-"""In-page left navigation pane — deliberately not Streamlit's built-in
-multipage sidebar (see app/main.py docstring for why)."""
+"""Top navigation — Streamlit's native `st.tabs()`, replacing the old
+custom-styled left-nav column (there is no sidebar in this app)."""
 
 from __future__ import annotations
 
 import streamlit as st
 
-from app.core.auth import render_logout_control
-
-_TABS = [
-    ("uploads", "📤 Uploads"),
-    ("certificates", "📄 Certificates"),
-    ("search", "🔍 Search"),
-    ("logs", "📜 Logs"),
-]
+_TAB_LABELS = ["📇 Payees", "📤 Uploads", "📜 Logs"]
 
 
-def render_left_nav() -> None:
-    active = st.session_state["active_tab"]
-    with st.container(key="left_nav"):
-        for tab_key, label in _TABS:
-            is_active = tab_key == active
-            if st.button(
-                label,
-                key=f"nav_{tab_key}",
-                type="primary" if is_active else "secondary",
-                use_container_width=True,
-            ) and not is_active:
-                st.session_state["active_tab"] = tab_key
-                st.rerun()
-
-        st.divider()
-        render_logout_control()
+def render_top_tabs():
+    """Returns (payees_tab, uploads_tab, logs_tab) container contexts."""
+    return st.tabs(_TAB_LABELS)

@@ -167,8 +167,8 @@ SHORT_DESCRIPTIONS: dict[str, str] = {
     "WC158": "Suppliers of goods",
     "WI160": "Suppliers of services",
     "WC160": "Suppliers of services",
-    "WI050": "Mgmt/tech consultants (≤₱3M)",
-    "WI051": "Mgmt/tech consultants (>₱3M)",
+    "WI050": "Management/tech consultants (≤₱3M)",
+    "WI051": "Management/tech consultants (>₱3M)",
 }
 
 
