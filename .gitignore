@@ -10,7 +10,6 @@ data/uploads/*
 !data/uploads/.gitkeep
 data/generated_pdfs/*
 !data/generated_pdfs/.gitkeep
-app/static/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/

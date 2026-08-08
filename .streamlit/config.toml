@@ -1,5 +1,0 @@
-[server]
-# Lets app/ui/components/preview.py embed generated PDFs via a same-origin
-# app/static/<file> URL instead of a data: URI — data: URIs get blocked by
-# privacy-hardened browsers (e.g. Brave Shields) when used inside <iframe>.
-enableStaticServing = true
