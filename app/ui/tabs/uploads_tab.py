@@ -21,6 +21,7 @@ from collections import Counter
 import streamlit as st
 
 from app.config import settings
+<<<<<<< Updated upstream
 from app.core.import_excel import (
     COLUMN_MAP,
     DEFAULT_SHEET_NAME,
@@ -32,6 +33,26 @@ from app.core.mapping_profiles import INTERNAL_FIELDS, list_profiles, save_profi
 from app.core.models import EventLog, EventSeverity, ImportBatch
 from app.ui.components.cards import render_selectable_card
 
+=======
+<<<<<<< Updated upstream
+from app.core.import_excel import COLUMN_MAP, DEFAULT_SHEET_NAME, import_workbook
+from app.core.models import EventLog, EventSeverity, ImportBatch
+from app.ui.components.cards import render_selectable_card
+
+=======
+from app.core.import_excel import (
+    COLUMN_MAP,
+    DEFAULT_SHEET_NAME,
+    MANDATORY_FIELDS,
+    PDF_FIELDS,
+    detect_headers,
+    import_workbook,
+)
+from app.core.mapping_profiles import INTERNAL_FIELDS, list_profiles, save_profile, suggest_mapping
+from app.core.models import EventLog, EventSeverity, ImportBatch
+from app.ui.components.cards import render_selectable_card
+
+>>>>>>> Stashed changes
 _UNMAPPED = "(unmapped)"
 _DEFAULT_PROFILE_CHOICE = "(default mapping)"
 
@@ -49,7 +70,15 @@ def _resolve_mapping_editor(session, detected_headers: list[str], sheet_name: st
     )
 
     if profile_choice == _DEFAULT_PROFILE_CHOICE:
+<<<<<<< Updated upstream
         baseline: dict[str, str] = dict(COLUMN_MAP)
+=======
+        # Auto-fill only the fields that feed the generated certificate;
+        # validation-only fields (total_billing, uploaded_*) are left
+        # unmapped by default even when the header matches exactly, so
+        # they don't get auto-detected — still choosable by hand below.
+        baseline: dict[str, str] = {h: f for h, f in COLUMN_MAP.items() if f in PDF_FIELDS}
+>>>>>>> Stashed changes
     else:
         baseline = dict(next(p for p in profiles if p.name == profile_choice).mapping)
 
@@ -87,6 +116,10 @@ def _resolve_mapping_editor(session, detected_headers: list[str], sheet_name: st
 
     return current_mapping
 
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 def render_uploads_tab(session, current_user, middle, right) -> None:
     with middle:

@@ -38,7 +38,6 @@ class PayeeFields:
     registered_name: str
     address: str | None
     zip_code: str | None
-    email: str | None
     tax_type: TaxType
 
 
@@ -128,7 +127,6 @@ def update_payee(
         "registered_name": payee.registered_name,
         "address": payee.address,
         "zip_code": payee.zip_code,
-        "email": payee.email,
         "tax_type": payee.tax_type.value,
     }
     after = {
@@ -137,7 +135,6 @@ def update_payee(
         or fields.registered_name,
         "address": sanitize_text(fields.address),
         "zip_code": sanitize_text(fields.zip_code),
-        "email": sanitize_text(fields.email),
         "tax_type": fields.tax_type.value,
     }
 
@@ -145,7 +142,6 @@ def update_payee(
     payee.registered_name = after["registered_name"]
     payee.address = after["address"]
     payee.zip_code = after["zip_code"]
-    payee.email = after["email"]
     payee.tax_type = fields.tax_type
 
     diff = _diff(before, after)
