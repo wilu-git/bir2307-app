@@ -1,0 +1,13 @@
+# Dark theme matching the design reference under
+# Files/DarkDesign/DarkModeDesignSystem-main (a Figma Make mockup of this
+# exact app). Streamlit's native theme engine handles widget-level chrome
+# (inputs, selects, buttons, checkboxes) consistently across versions;
+# app/ui/styles.py layers the custom pieces (badges, selectable cards,
+# scrollbar, tab underline) on top with matching colors.
+[theme]
+base = "dark"
+primaryColor = "#2563EB"
+backgroundColor = "#111827"
+secondaryBackgroundColor = "#1F2937"
+textColor = "#F3F4F6"
+font = "sans serif"

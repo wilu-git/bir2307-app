@@ -64,17 +64,10 @@ COLUMN_MAP: dict[str, str] = {
 OVERFLOW_PREFIX = "column "  # "Column 1".."Column 16" -> overflow_notes
 EXCLUDED_HEADERS = {"a", "column 39", "file name", "not subject to ewt"}
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
 # Fields `parse_row` cannot proceed without — a column-mapping UI must have
 # all four assigned to some source header before an import can run.
 MANDATORY_FIELDS = {"reference_no", "tin", "gross_amount", "atc_code"}
 
-<<<<<<< Updated upstream
-=======
 # Fields that actually feed the generated certificate — either drawn
 # directly (see core/pdf_generator.py) or required to compute a value that
 # is drawn (tax_type -> compute_tax_base -> tax_withheld). Column-mapping
@@ -95,8 +88,6 @@ PDF_FIELDS: set[str] = {
     "invoice_date",
 }
 
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 
 def normalize_header(header: object) -> str:
     """Collapse whitespace/newlines and lowercase for robust header matching."""
