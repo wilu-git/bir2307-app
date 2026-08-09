@@ -129,13 +129,7 @@ class Transaction(Base):
     rate_applied: Mapped[Decimal] = mapped_column(Numeric(6, 4))
     tax_withheld: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-<<<<<<< Updated upstream
-    assigned_to: Mapped[str | None] = mapped_column(String(255), default=None)
-    date_accomplished: Mapped[datetime | None] = mapped_column(DateTime, default=None, index=True)
-    remarks: Mapped[str | None] = mapped_column(Text, default=None)
-=======
     invoice_date: Mapped[datetime | None] = mapped_column(DateTime, default=None, index=True)
->>>>>>> Stashed changes
     overflow_notes: Mapped[str | None] = mapped_column(Text, default=None)
     raw_row_json: Mapped[str | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
