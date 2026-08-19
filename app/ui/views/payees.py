@@ -12,8 +12,12 @@ import re
 import pandas as pd
 import streamlit as st
 
-from app.core.models import CertificateStatus, TaxType
+from app.config import settings
+from app.core.certificates import transition_status
+from app.core.logging_config import log_event
+from app.core.models import CertificateStatus, EventCategory, EventSeverity, TaxType
 from app.core.payees import get_events_for_payee, get_transactions_for_payee, list_payees_with_summary
+from app.core.pdf_generator import generate_certificate_pdf
 from app.core.records import DuplicateTinError, PayeeFields, update_payee
 from app.core.security import mask_tin
 from app.ui.components.cards import status_badge
@@ -129,12 +133,40 @@ def _payee_drawer(session, payee_id: int, current_user: str) -> None:
         if not certs:
             st.caption("No certificates yet.")
         for cert in certs:
-            col_a, col_b = st.columns([3, 1])
+            col_a, col_b, col_c = st.columns([3, 1, 1.6])
             with col_a:
                 st.markdown(f"#{cert.id} · {cert.period_start:%Y-%m-%d} to {cert.period_end:%Y-%m-%d}")
                 st.caption(f"₱{(cert.total_gross - cert.total_tax_withheld):,.2f}")
             with col_b:
                 status_badge(_STATUS_LABEL[cert.status.value], CERT_STATUS_VARIANT[cert.status.value])
+            with col_c:
+                if st.button("Generate PDF", key=f"payee_gen_{cert.id}", use_container_width=True):
+                    try:
+                        path = generate_certificate_pdf(session, cert, settings.generated_pdfs_dir)
+                        if cert.status == CertificateStatus.DRAFT:
+                            transition_status(session, cert, CertificateStatus.GENERATED, current_user, "PDF generated.")
+                        log_event(
+                            session,
+                            category=EventCategory.PDF_GENERATION,
+                            severity=EventSeverity.INFO,
+                            message=f"Generated unsigned PDF for certificate #{cert.id}.",
+                            technical_detail=str(path),
+                            certificate_id=cert.id,
+                        )
+                        session.commit()
+                        st.success(f"Saved to {path}")
+                        st.rerun()
+                    except Exception as exc:
+                        log_event(
+                            session,
+                            category=EventCategory.PDF_GENERATION,
+                            severity=EventSeverity.ERROR,
+                            message=f"Failed to generate PDF for certificate #{cert.id}.",
+                            technical_detail=repr(exc),
+                            certificate_id=cert.id,
+                        )
+                        session.commit()
+                        st.error(f"PDF generation failed: {exc}")
 
     with tab_history:
         events = get_events_for_payee(session, payee.id)
