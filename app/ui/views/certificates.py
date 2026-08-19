@@ -262,7 +262,41 @@ def render_certificates_view(session, current_user: str) -> None:
             f"{len(selected_certs)} selected</span>",
             unsafe_allow_html=True,
         )
-        b1, b2, b3, b4 = st.columns([1.4, 1.4, 1.4, 4])
+        b_gen, b1, b2, b3, b4 = st.columns([1.6, 1.4, 1.4, 1.4, 4])
+        with b_gen:
+            if st.button("Generate PDF(s)", key="bulk_generate", use_container_width=True):
+                from app.config import settings
+
+                generated, failed = 0, 0
+                for c in selected_certs:
+                    try:
+                        generate_certificate_pdf(session, c, settings.generated_pdfs_dir)
+                        if c.status == CertificateStatus.DRAFT:
+                            transition_status(session, c, CertificateStatus.GENERATED, current_user, "PDF generated.")
+                        log_event(
+                            session,
+                            category=EventCategory.PDF_GENERATION,
+                            severity=EventSeverity.INFO,
+                            message=f"Generated unsigned PDF for certificate #{c.id}.",
+                            certificate_id=c.id,
+                        )
+                        generated += 1
+                    except Exception as exc:
+                        log_event(
+                            session,
+                            category=EventCategory.PDF_GENERATION,
+                            severity=EventSeverity.ERROR,
+                            message=f"Failed to generate PDF for certificate #{c.id}.",
+                            technical_detail=repr(exc),
+                            certificate_id=c.id,
+                        )
+                        failed += 1
+                session.commit()
+                if failed:
+                    st.warning(f"Generated {generated} PDF(s), {failed} failed — check the Audit Log for details.")
+                else:
+                    st.success(f"Generated {generated} PDF(s).")
+                st.rerun()
         with b1:
             if st.button("Mark Forwarded", key="bulk_forward", use_container_width=True):
                 changed = bulk_transition_status(
