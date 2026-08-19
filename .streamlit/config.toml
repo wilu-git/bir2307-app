@@ -1,13 +1,19 @@
-# Dark theme matching the design reference under
-# Files/DarkDesign/DarkModeDesignSystem-main (a Figma Make mockup of this
-# exact app). Streamlit's native theme engine handles widget-level chrome
-# (inputs, selects, buttons, checkboxes) consistently across versions;
-# app/ui/styles.py layers the custom pieces (badges, selectable cards,
-# scrollbar, tab underline) on top with matching colors.
+# Light theme matching the design reference under Files/BIR2307_Figma (a
+# Figma Make mockup of this app's professional-SaaS redesign). Streamlit's
+# native theme engine only supports one fixed palette per server process
+# (this is that palette — the "light" default); the in-app light/dark
+# toggle (app/ui/styles.py) additionally CSS-overrides native widget
+# chrome for the dark variant, since config.toml itself can't be switched
+# at runtime.
 [theme]
-base = "dark"
+base = "light"
 primaryColor = "#2563EB"
-backgroundColor = "#111827"
-secondaryBackgroundColor = "#1F2937"
-textColor = "#F3F4F6"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
 font = "sans serif"
+
+[client]
+# Hides Streamlit's own "Deploy"/settings toolbar chrome — this is meant to
+# read as a standalone product, not an app still under Streamlit Cloud dev.
+toolbarMode = "minimal"

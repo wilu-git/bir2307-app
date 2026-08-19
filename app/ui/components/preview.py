@@ -1,8 +1,8 @@
 """The single shared document-preview implementation.
 
-`render_document_preview` is called identically from both the Certificates
-tab and the Search tab (search results ARE certificates) — this is the one
-place PDF bytes ever get read and embedded; no tab re-implements it.
+`render_pdf_preview` is the one place PDF bytes ever get read and embedded
+— every certificate/payee view that needs to show a generated PDF reuses
+this instead of re-implementing it.
 
 PDF preview approach: base64-encode the already-generated PDF and embed it
 via a data-URI <iframe>. Zero new dependencies, keeps generation (see
@@ -20,16 +20,7 @@ from pathlib import Path
 import streamlit as st
 
 from app.core.security import mask_tin
-from app.ui.components.cards import status_badge
-from app.ui.styles import BORDER
-
-STATUS_BADGE_VARIANT = {
-    "draft": "neutral",
-    "generated": "accent",
-    "forwarded": "accent",
-    "completed_signed": "success",
-    "void": "error",
-}
+from app.ui.styles import page_tokens
 
 
 def render_pdf_preview(pdf_path: str | Path | None, label: str, key_suffix: str) -> None:
@@ -44,11 +35,12 @@ def render_pdf_preview(pdf_path: str | Path | None, label: str, key_suffix: str)
         st.info("Preview unavailable — file missing on disk. Use Download once regenerated.")
         return
 
+    border = page_tokens(st.session_state.get("theme", "light"))["border"]
     b64 = base64.b64encode(data).decode("ascii")
     st.markdown(
         f'<iframe src="data:application/pdf;base64,{b64}#toolbar=0" '
         f'width="100%" height="700" '
-        f'style="border:1px solid {BORDER}; border-radius:8px;"></iframe>',
+        f'style="border:1px solid {border}; border-radius:8px;"></iframe>',
         unsafe_allow_html=True,
     )
     st.download_button(
@@ -60,27 +52,22 @@ def render_pdf_preview(pdf_path: str | Path | None, label: str, key_suffix: str)
     )
 
 
-def render_document_preview(certificate) -> None:
+def render_certificate_metrics(certificate) -> None:
+    """The metadata grid: Amount Paid / Tax Base / EWT / period / TIN /
+    address — the certificate-level facts the Summary drawer tab shows
+    above the PDF preview."""
     payee = certificate.payee
-    st.subheader(f"Certificate #{certificate.id}")
-    st.write(f"**{payee.registered_name}** — {mask_tin(payee.tin)}")
-    st.caption(f"{certificate.period_start:%Y-%m-%d} to {certificate.period_end:%Y-%m-%d}")
-    status_badge(
-        certificate.status.value, STATUS_BADGE_VARIANT.get(certificate.status.value, "neutral")
-    )
-
+    amount_paid = certificate.total_gross - certificate.total_tax_withheld
     c1, c2 = st.columns(2)
-    c1.metric("Total gross", f"₱{certificate.total_gross:,.2f}")
-    c2.metric("Total tax withheld", f"₱{certificate.total_tax_withheld:,.2f}")
-    st.write(f"**Full TIN:** {payee.tin}")
-    st.write(f"**Address:** {payee.address or '—'}")
-
-    st.divider()
-    render_pdf_preview(
-        certificate.pdf_unsigned_path, "Unsigned PDF", key_suffix=f"unsigned_{certificate.id}"
+    c1.metric("Amount paid", f"₱{amount_paid:,.2f}")
+    c2.metric("EWT withheld", f"₱{certificate.total_tax_withheld:,.2f}")
+    c3, c4 = st.columns(2)
+    c3.metric("Total gross", f"₱{certificate.total_gross:,.2f}")
+    c4.metric(
+        "Date generated",
+        f"{certificate.generated_at:%Y-%m-%d}" if certificate.generated_at else "—",
     )
-    if certificate.pdf_signed_path:
-        st.divider()
-        render_pdf_preview(
-            certificate.pdf_signed_path, "Signed copy", key_suffix=f"signed_{certificate.id}"
-        )
+    st.caption(f"Period: {certificate.period_start:%Y-%m-%d} to {certificate.period_end:%Y-%m-%d}")
+    st.write(f"**{payee.registered_name}**")
+    st.write(f"**Full TIN:** {payee.tin} &nbsp;·&nbsp; **Masked:** {mask_tin(payee.tin)}", unsafe_allow_html=False)
+    st.write(f"**Address:** {payee.address or '—'}")
