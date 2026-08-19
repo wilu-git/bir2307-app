@@ -50,6 +50,14 @@ from app.core.models import AtcCode, Certificate, CertificateTransaction, Transa
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "bir2307_official_template.pdf"
 PAGE_HEIGHT = 936.0  # template page is 612 x 936 pt
 
+# TABLE_FIRST_ROW_TOP..TABLE_LAST_ROW_TOP (see Part III table constants below)
+# fit exactly 9 row positions (365.8 + n*13.7 <= 488.0 for n=0..8) before the
+# `min(row_top, TABLE_LAST_ROW_TOP)` clamp starts stacking every further row
+# on top of row 9 — i.e. a 10th distinct ATC code overlaps visibly on the
+# printed PDF today. `count_distinct_atc_codes` lets a caller warn before
+# that happens instead of discovering it in the generated file.
+MAX_ATC_LINES_PER_CERTIFICATE = 9
+
 # --------------------------------------------------------------------------
 # FONTS — the one place to change typeface/size.
 # --------------------------------------------------------------------------
@@ -201,6 +209,19 @@ def _fit_text(text: str, max_width: float, font: str, size: float) -> str:
     while truncated and stringWidth(truncated, font, size) + ellipsis_width > max_width:
         truncated = truncated[:-1]
     return truncated.rstrip() + ellipsis
+
+
+def count_distinct_atc_codes(session: Session, certificate: Certificate) -> int:
+    """Distinct ATC codes among `certificate`'s linked transactions — each
+    becomes one Part III table row (see `generate_certificate_pdf`'s
+    `by_atc` grouping). Compare against `MAX_ATC_LINES_PER_CERTIFICATE`."""
+    return (
+        session.query(Transaction.atc_code)
+        .join(CertificateTransaction, CertificateTransaction.transaction_id == Transaction.id)
+        .filter(CertificateTransaction.certificate_id == certificate.id)
+        .distinct()
+        .count()
+    )
 
 
 def generate_certificate_pdf(session: Session, certificate: Certificate, output_dir: Path) -> Path:

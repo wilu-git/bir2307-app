@@ -1,165 +1,377 @@
 """One CSS injection for the whole workspace's visual language.
 
+Palette and component vocabulary follow the redesign reference under
+Files/BIR2307_Figma (a Figma Make mockup: sidebar shell, KPI cards, status
+badges, drawers-as-dialogs, data tables). That reference is a single light
+theme; dark mode is this app's own addition (user chose "offer both" over
+"light only" or "dark only" — see PROJECT memory).
+
+Streamlit's native widget chrome (inputs, buttons, selects, dataframe) is
+only themeable per-server via .streamlit/config.toml, which is fixed at
+process start — there is no supported way to swap it per browser session.
+config.toml is set to the light palette below as the base; toggling to
+dark re-colors the page via aggressive `!important` CSS overrides on
+Streamlit's stable `data-testid`/`aria-*` selectors instead. This works for
+everything tested (buttons, inputs, selects, checkboxes, dataframe,
+expanders, dialogs, alerts) but is inherently a CSS override, not a true
+theme switch — flag it if some future Streamlit release renders a widget
+this doesn't reach.
+
 Scoped to `st.container(key=...)` hooks (Streamlit >=1.37 emits an
 `st-key-<key>` class on that container's DOM node) and stable Streamlit
 test-ids — never blanket tag selectors — so this can't bleed into
 Streamlit's own chrome or fight a future Streamlit release's markup.
-
-Palette matches the dark-mode design reference under
-Files/DarkDesign/DarkModeDesignSystem-main (a Figma Make mockup of this
-exact app's Payees/Uploads/Logs screens). Streamlit's own dark theme
-(.streamlit/config.toml) handles native widget chrome; this file only
-covers the custom pieces: badges, selectable cards, list scrollbars, and
-the tab underline.
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
-# Surfaces
-BG_BASE = "#111827"
-BG_SURFACE = "#1F2937"
-BG_ELEVATED = "#374151"
-BG_INPUT = "#0F172A"
+# ---------------------------------------------------------------------------
+# Tokens
+# ---------------------------------------------------------------------------
 
-# Borders
-BORDER = "#374151"
-BORDER_HOVER = "#3B5998"
+LIGHT = {
+    "bg": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "surface_alt": "#F8FAFC",
+    "border": "#E2E8F0",
+    "border_subtle": "#F1F5F9",
+    "text_primary": "#0F172A",
+    "text_secondary": "#334155",
+    "text_muted": "#64748B",
+    "text_faint": "#94A3B8",
+    "accent": "#2563EB",
+    "accent_hover": "#1D4ED8",
+    "accent_bg": "#EFF6FF",
+    "accent_bg_strong": "#DBEAFE",
+    "input_bg": "#F8FAFC",
+    "shadow": "rgba(15, 23, 42, 0.08)",
+    "overlay": "rgba(15, 23, 42, 0.4)",
+}
 
-# Text
-TEXT_PRIMARY = "#F3F4F6"
-TEXT_SECONDARY = "#9CA3AF"
-TEXT_MUTED = "#6B7280"
+DARK = {
+    "bg": "#0B1220",
+    "surface": "#111827",
+    "surface_alt": "#1A2436",
+    "border": "#334155",
+    "border_subtle": "#1E293B",
+    "text_primary": "#F1F5F9",
+    "text_secondary": "#CBD5E1",
+    "text_muted": "#94A3B8",
+    "text_faint": "#64748B",
+    "accent": "#3B82F6",
+    "accent_hover": "#60A5FA",
+    "accent_bg": "rgba(37, 99, 235, 0.16)",
+    "accent_bg_strong": "rgba(37, 99, 235, 0.28)",
+    "input_bg": "#0F172A",
+    "shadow": "rgba(0, 0, 0, 0.5)",
+    "overlay": "rgba(0, 0, 0, 0.6)",
+}
 
-# Accent
-ACCENT = "#2563EB"
-ACCENT_HOVER = "#1D4ED8"
+# The sidebar is dark in both app themes — matches the source design, where
+# `bg-sidebar` (#0F172A) never changes regardless of the main content theme.
+SIDEBAR = {
+    "bg": "#0F172A",
+    "hover": "#1E293B",
+    "active": "#1D4ED8",
+    "text": "#94A3B8",
+    "text_active": "#FFFFFF",
+    "border": "#1E293B",
+}
 
-_CSS = f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+# Certificate-status badge variants, light/dark. "void" additionally gets a
+# strikethrough via the --void modifier class.
+STATUS_LIGHT = {
+    "neutral": ("#F1F5F9", "#64748B", "#E2E8F0"),
+    "accent": ("#EFF6FF", "#1D4ED8", "#DBEAFE"),
+    "violet": ("#F5F3FF", "#6D28D9", "#EDE9FE"),
+    "success": ("#ECFDF5", "#047857", "#D1FAE5"),
+    "warning": ("#FFFBEB", "#B45309", "#FEF3C7"),
+    "error": ("#FEF2F2", "#B91C1C", "#FEE2E2"),
+}
+STATUS_DARK = {
+    "neutral": ("#1F2937", "#94A3B8", "rgba(75, 85, 99, 0.5)"),
+    "accent": ("rgba(30, 58, 138, 0.5)", "#93C5FD", "rgba(59, 130, 246, 0.4)"),
+    "violet": ("rgba(76, 29, 149, 0.5)", "#C4B5FD", "rgba(124, 58, 237, 0.4)"),
+    "success": ("rgba(2, 44, 34, 0.7)", "#6EE7B7", "rgba(4, 120, 87, 0.5)"),
+    "warning": ("rgba(69, 26, 3, 0.7)", "#FCD34D", "rgba(180, 83, 9, 0.5)"),
+    "error": ("rgba(69, 10, 10, 0.7)", "#FCA5A5", "rgba(185, 28, 28, 0.5)"),
+}
 
-html, body, [class*="css"] {{
-    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+# Certificate lifecycle -> badge variant (draft/generated/forwarded/
+# completed_signed/void map to the model's CertificateStatus values).
+CERT_STATUS_VARIANT = {
+    "draft": "neutral",
+    "generated": "accent",
+    "forwarded": "violet",
+    "completed_signed": "success",
+    "void": "void",
+}
+# Event/log severity -> badge variant.
+SEVERITY_VARIANT = {"info": "accent", "warning": "warning", "error": "error"}
+
+
+def _badge_css(tokens: dict, is_dark: bool) -> str:
+    rules = []
+    for variant, (bg, fg, border) in tokens.items():
+        rules.append(
+            f".status-badge--{variant} {{ background: {bg}; color: {fg}; "
+            f"border-color: {border}; }}"
+        )
+    void_bg, void_fg, void_border = tokens["neutral"]
+    rules.append(
+        f".status-badge--void {{ background: {void_bg}; color: {void_fg}; "
+        f"border-color: {void_border}; text-decoration: line-through; opacity: 0.7; }}"
+    )
+    return "\n".join(rules)
+
+
+def _theme_css(t: dict, is_dark: bool) -> str:
+    """Everything that differs between light/dark: page + native-widget
+    chrome. `t` is LIGHT or DARK."""
+    badge_tokens = STATUS_DARK if is_dark else STATUS_LIGHT
+    return f"""
+/* Page background/text */
+[data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stHeader"] {{
+    background: {t["bg"]} !important;
+    color: {t["text_primary"]} !important;
 }}
-code, pre, div[data-testid="stCodeBlock"] {{
-    font-family: 'JetBrains Mono', monospace !important;
+[data-testid="stAppViewContainer"] * {{ color: inherit; }}
+[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] span {{ color: {t["text_secondary"]}; }}
+h1, h2, h3, h4, h5, [data-testid="stMarkdownContainer"] h1,
+[data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {{
+    color: {t["text_primary"]} !important;
+}}
+[data-testid="stCaptionContainer"], .stCaption {{ color: {t["text_faint"]} !important; }}
+
+/* Bordered containers / cards */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    background: {t["surface"]};
+    border-color: {t["border"]} !important;
+    border-radius: 10px !important;
 }}
 
 /* Buttons */
-div[data-testid="stButton"] button[kind="primary"] {{
-    background-color: {ACCENT};
-    border-color: {ACCENT};
+div[data-testid="stButton"] button[kind="primary"],
+div[data-testid="stDownloadButton"] button {{
+    background-color: {t["accent"]};
+    border-color: {t["accent"]};
+    color: #FFFFFF;
 }}
-div[data-testid="stButton"] button[kind="primary"]:hover {{
-    background-color: {ACCENT_HOVER};
-    border-color: {ACCENT_HOVER};
+div[data-testid="stButton"] button[kind="primary"]:hover,
+div[data-testid="stDownloadButton"] button:hover {{
+    background-color: {t["accent_hover"]};
+    border-color: {t["accent_hover"]};
 }}
 div[data-testid="stButton"] button[kind="secondary"] {{
-    background-color: {BG_SURFACE};
-    border-color: {BORDER};
-    color: {TEXT_SECONDARY};
+    background-color: {t["surface"]};
+    border-color: {t["border"]};
+    color: {t["text_secondary"]};
 }}
 div[data-testid="stButton"] button[kind="secondary"]:hover {{
-    background-color: {BG_ELEVATED};
-    border-color: {BG_ELEVATED};
-    color: {TEXT_PRIMARY};
+    background-color: {t["surface_alt"]};
+    border-color: {t["text_faint"]};
+    color: {t["text_primary"]};
+}}
+div[data-testid="stButton"] button:disabled {{ opacity: 0.45; }}
+
+/* Inputs / selects / checkboxes / date & number inputs */
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stDateInput"] input,
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] {{
+    background-color: {t["input_bg"]} !important;
+    border-color: {t["border"]} !important;
+    color: {t["text_primary"]} !important;
+}}
+div[data-testid="stTextInput"] input::placeholder {{ color: {t["text_faint"]} !important; }}
+[data-baseweb="popover"] [role="listbox"] {{
+    background-color: {t["surface"]} !important;
+    border-color: {t["border"]} !important;
+}}
+[data-baseweb="popover"] [role="option"] {{ color: {t["text_secondary"]} !important; }}
+[data-baseweb="popover"] [role="option"]:hover {{ background-color: {t["surface_alt"]} !important; }}
+label[data-testid="stWidgetLabel"] p {{ color: {t["text_muted"]} !important; }}
+
+/* Checkboxes */
+[data-testid="stCheckbox"] label span:first-child {{
+    background-color: {t["input_bg"]} !important;
+    border-color: {t["border"]} !important;
 }}
 
-/* Bordered containers (cards, panels) */
-div[data-testid="stVerticalBlockBorderWrapper"] {{
-    border-radius: 10px !important;
-    border-color: {BORDER} !important;
-    background-color: {BG_SURFACE};
+/* File uploader */
+[data-testid="stFileUploaderDropzone"] {{
+    background-color: {t["surface_alt"]} !important;
+    border-color: {t["border"]} !important;
+}}
+[data-testid="stFileUploaderDropzone"] * {{ color: {t["text_secondary"]} !important; }}
+
+/* Expander */
+[data-testid="stExpander"] {{
+    background-color: {t["surface"]};
+    border-color: {t["border"]} !important;
+}}
+[data-testid="stExpander"] summary {{ color: {t["text_primary"]} !important; }}
+
+/* Dialog (used as our "drawer" / import wizard modal) */
+div[role="dialog"] {{
+    background-color: {t["surface"]} !important;
+    border-color: {t["border"]};
+}}
+div[role="dialog"] * {{ color: {t["text_secondary"]}; }}
+div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{
+    color: {t["text_primary"]} !important;
 }}
 
-/* Selectable list-row cards: hover + selected states */
-div[class*="st-key-card_"] > div[data-testid="stVerticalBlockBorderWrapper"] {{
-    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+/* Tables (st.dataframe) */
+div[data-testid="stDataFrame"] {{
+    background-color: {t["surface"]};
+    border-color: {t["border"]} !important;
 }}
-div[class*="st-key-card_"]:hover > div[data-testid="stVerticalBlockBorderWrapper"] {{
-    border-color: {BORDER_HOVER} !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+div[data-testid="stDataFrame"] [role="columnheader"] {{
+    background-color: {t["surface_alt"]} !important;
+    color: {t["text_muted"]} !important;
 }}
-div.st-key-card_selected_payees div[data-testid="stVerticalBlockBorderWrapper"],
-div.st-key-card_selected_uploads div[data-testid="stVerticalBlockBorderWrapper"],
-div.st-key-card_selected_logs div[data-testid="stVerticalBlockBorderWrapper"] {{
-    border-color: {ACCENT} !important;
-    border-width: 2px !important;
-    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
-}}
+div[data-testid="stDataFrame"] [role="gridcell"] {{ color: {t["text_secondary"]} !important; }}
 
-/* Status/severity badge pills — translucent fill + matching border, per
-   the reference Badge component's blue/amber/green/red/gray variants. */
-.status-badge {{
+/* Tabs (used inside drawers: Summary/Timeline/Signed Copy, Overview/Transactions/...) */
+div[data-testid="stTabs"] button[data-baseweb="tab"] {{
+    color: {t["text_muted"]} !important;
+    font-weight: 500;
+}}
+div[data-testid="stTabs"] button[aria-selected="true"] {{ color: {t["accent"]} !important; }}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {{ background-color: {t["accent"]} !important; }}
+div[data-testid="stTabs"] [data-baseweb="tab-border"] {{ background-color: {t["border"]} !important; }}
+
+/* Alerts (st.info/success/warning/error) restyled to flat tinted bars matching the badge palette */
+div[data-testid="stAlertContainer"] {{ border-radius: 8px; border-width: 1px; border-style: solid; }}
+div[data-testid="stAlertContainer"] p {{ color: inherit !important; }}
+
+/* Sidebar (theme-independent dark — declared here too so it applies
+   regardless of which theme block loads last) */
+[data-testid="stSidebar"] {{
+    background-color: {SIDEBAR["bg"]} !important;
+    border-right: 1px solid {SIDEBAR["border"]};
+}}
+[data-testid="stSidebar"] * {{ color: {SIDEBAR["text"]}; }}
+
+/* Status badges */
+{_badge_css(badge_tokens, is_dark)}
+
+/* Scrollbar */
+*::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+*::-webkit-scrollbar-track {{ background: transparent; }}
+*::-webkit-scrollbar-thumb {{ background: {t["border"]}; border-radius: 3px; }}
+* {{ scrollbar-color: {t["border"]} transparent; }}
+"""
+
+
+_STATIC_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+html, body, [class*="css"] { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+h1, h2, h3, [data-testid="stMarkdownContainer"] h1, [data-testid="stMarkdownContainer"] h2,
+[data-testid="stMarkdownContainer"] h3 { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+.tabular, code, pre, div[data-testid="stCodeBlock"] {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Status/severity badge pills — shared shape, color comes from the
+   per-theme block above. */
+.status-badge {
     display: inline-flex;
     align-items: center;
     padding: 2px 10px;
-    border-radius: 999px;
+    border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
     border: 1px solid transparent;
-}}
-.status-badge--neutral {{
-    background: {BG_ELEVATED};
-    color: {TEXT_SECONDARY};
-    border-color: rgba(75, 85, 99, 0.5);
-}}
-.status-badge--accent {{
-    background: rgba(30, 58, 138, 0.5);
-    color: #93C5FD;
-    border-color: rgba(59, 130, 246, 0.4);
-}}
-.status-badge--success {{
-    background: rgba(2, 44, 34, 0.7);
-    color: #6EE7B7;
-    border-color: rgba(4, 120, 87, 0.5);
-}}
-.status-badge--warning {{
-    background: rgba(69, 26, 3, 0.7);
-    color: #FCD34D;
-    border-color: rgba(180, 83, 9, 0.5);
-}}
-.status-badge--error {{
-    background: rgba(69, 10, 10, 0.7);
-    color: #FCA5A5;
-    border-color: rgba(185, 28, 28, 0.5);
-}}
+}
 
-/* Scrollable list containers keep their own scrollbar, not the page's.
-   One rule per tab's list container — element keys must be unique across
-   the whole app now that st.tabs() renders every tab's body each rerun
-   (unlike the old if/elif dispatch, which only ever rendered one). */
-div.st-key-payees_list,
-div.st-key-uploads_list,
-div.st-key-logs_list {{
-    padding-right: 4px;
-}}
-div.st-key-payees_list *::-webkit-scrollbar,
-div.st-key-uploads_list *::-webkit-scrollbar,
-div.st-key-logs_list *::-webkit-scrollbar {{
-    width: 6px;
-    height: 6px;
-}}
-div.st-key-payees_list *::-webkit-scrollbar-thumb,
-div.st-key-uploads_list *::-webkit-scrollbar-thumb,
-div.st-key-logs_list *::-webkit-scrollbar-thumb {{
-    background: {BORDER};
-    border-radius: 3px;
-}}
+/* KPI cards (Overview) */
+.kpi-card {
+    border-radius: 10px;
+    border: 1px solid;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease;
+}
+.kpi-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.kpi-card .kpi-value { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; font-size: 1.6rem; line-height: 1.1; }
+.kpi-card .kpi-label { font-weight: 600; font-size: 0.85rem; margin-top: 4px; }
+.kpi-card .kpi-sub { font-size: 0.72rem; margin-top: 2px; opacity: 0.75; }
 
-/* Top tab bar underline, matching the reference nav */
-div[data-testid="stTabs"] button[data-baseweb="tab"] {{
-    font-weight: 600;
-}}
-div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {{
-    background-color: {ACCENT} !important;
-}}
+/* Attention cards */
+.attention-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid;
+    margin-bottom: 8px;
+}
+.attention-card .attention-title { font-weight: 600; font-size: 0.85rem; }
+.attention-card .attention-desc { font-size: 0.75rem; margin-top: 2px; line-height: 1.4; opacity: 0.85; }
+
+/* Workflow stage pills */
+.workflow-stage-num {
+    width: 30px; height: 30px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+/* Timeline (certificate status history) */
+.timeline-row { display: flex; gap: 10px; }
+.timeline-dot {
+    width: 22px; height: 22px; border-radius: 999px; border: 2px solid;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.timeline-line { width: 1px; flex: 1; margin: 2px 0; min-height: 24px; }
+
+/* Sidebar is always dark regardless of app theme (matches the source
+   design's fixed bg-sidebar) — these selectors are more specific than the
+   theme block's global button rules, so they win regardless of load order. */
+[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"] {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    color: #94A3B8 !important;
+    justify-content: flex-start;
+}
+[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"]:hover {
+    background-color: #1E293B !important;
+    color: #E2E8F0 !important;
+}
+[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"] {
+    background-color: #1D4ED8 !important;
+    border-color: #1D4ED8 !important;
+    justify-content: flex-start;
+}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #64748B !important; }
+[data-testid="stSidebar"] hr { border-color: #1E293B !important; }
 </style>
 """
 
 
-def inject_css() -> None:
-    st.markdown(_CSS, unsafe_allow_html=True)
+def page_tokens(theme: str) -> dict:
+    """The active theme's color tokens, for views building custom HTML
+    (KPI cards, timelines, badges) — the counterpart to `inject_css`."""
+    return DARK if theme == "dark" else LIGHT
+
+
+def status_colors(theme: str) -> dict:
+    """The active theme's (bg, fg, border) tuples per badge variant."""
+    return STATUS_DARK if theme == "dark" else STATUS_LIGHT
+
+
+def inject_css(theme: str = "light") -> None:
+    tokens = DARK if theme == "dark" else LIGHT
+    st.markdown(_STATIC_CSS, unsafe_allow_html=True)
+    st.markdown(f"<style>{_theme_css(tokens, theme == 'dark')}</style>", unsafe_allow_html=True)

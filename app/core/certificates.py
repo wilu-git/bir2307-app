@@ -160,3 +160,23 @@ def transition_status(
         technical_detail=f"changed_by={changed_by} note={note!r}",
         certificate_id=certificate.id,
     )
+
+
+def bulk_transition_status(
+    session: Session,
+    certificates: list[Certificate],
+    new_status: CertificateStatus,
+    changed_by: str,
+    note: str | None = None,
+) -> int:
+    """Apply `transition_status` to each of `certificates`; returns how many
+    actually changed (each no-op certificate already-at `new_status` is
+    skipped the same way a single transition would be, so callers driving
+    this from a multi-select don't need to pre-filter)."""
+    changed = 0
+    for certificate in certificates:
+        before = certificate.status
+        transition_status(session, certificate, new_status, changed_by, note)
+        if certificate.status != before:
+            changed += 1
+    return changed
