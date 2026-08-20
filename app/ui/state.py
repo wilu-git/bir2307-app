@@ -43,6 +43,8 @@ _DEFAULTS = {
     "import_wizard_stage": "upload",
     "import_wizard_batch_id": None,
     "import_wizard_group_result": None,
+    # Manual Form (blank BIR 2307, no database records created)
+    "manual_form_last_path": None,
 }
 
 

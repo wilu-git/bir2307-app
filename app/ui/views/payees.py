@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-import pandas as pd
 import streamlit as st
 
 from app.config import settings
@@ -218,40 +217,22 @@ def render_payees_view(session, current_user: str) -> None:
     page = paginate(len(summaries), _PAGE_SIZE, "payees_table_page")
     summaries_page = summaries[(page - 1) * _PAGE_SIZE : page * _PAGE_SIZE]
 
-    rows = []
     for s in summaries_page:
         p = s.payee
-        rows.append(
-            {
-                "Payee": p.registered_name,
-                "TIN": mask_tin(p.tin),
-                "Certificates": s.certificate_count,
-                "Last Certificate": _last_certificate_label(p),
-                "Outstanding": _outstanding_count(p),
-                "Active this quarter": "Yes" if _payee_is_active_this_quarter(p, period_start, period_end) else "No",
-            }
-        )
-    df = pd.DataFrame(rows)
-
-    event = st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="payees_table",
-        column_config={
-            "Payee": st.column_config.TextColumn(width="medium"),
-            "TIN": st.column_config.TextColumn(width="small"),
-            "Certificates": st.column_config.NumberColumn(width="small"),
-            "Last Certificate": st.column_config.TextColumn(width="small"),
-            "Outstanding": st.column_config.NumberColumn(width="small"),
-            "Active this quarter": st.column_config.TextColumn(width="small"),
-        },
-    )
-    selected_rows = event.selection["rows"] if event and event.selection else []
-    if selected_rows:
-        payee = summaries_page[selected_rows[0]].payee
-        if st.button(f"Open {payee.registered_name} →", key="open_payee_drawer", type="primary"):
-            st.session_state["selected_payee_id"] = payee.id
-            _payee_drawer(session, payee.id, current_user)
+        with st.container(border=True, key=f"payee_row_{p.id}"):
+            main_col, action_col = st.columns([4, 1.3])
+            with main_col:
+                st.markdown(f"**{p.registered_name}**")
+                active = (
+                    "Active this quarter"
+                    if _payee_is_active_this_quarter(p, period_start, period_end)
+                    else "Inactive this quarter"
+                )
+                st.caption(
+                    f"{mask_tin(p.tin)} · {s.certificate_count} certificate(s) · "
+                    f"Last {_last_certificate_label(p)} · Outstanding {_outstanding_count(p)} · {active}"
+                )
+            with action_col:
+                if st.button("Open →", key=f"payee_open_{p.id}", use_container_width=True):
+                    st.session_state["selected_payee_id"] = p.id
+                    _payee_drawer(session, p.id, current_user)

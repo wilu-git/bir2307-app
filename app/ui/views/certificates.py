@@ -7,14 +7,25 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from datetime import datetime
+from decimal import Decimal
 
 import streamlit as st
 
-from app.core.certificates import bulk_transition_status, transition_status
+from app.core.certificates import bulk_transition_status, recompute_totals, transition_status
 from app.core.logging_config import log_event
-from app.core.models import CertificateStatus, EventCategory, EventSeverity, StatusLog
+from app.core.models import (
+    AtcCode,
+    CertificateStatus,
+    CertificateTransaction,
+    EventCategory,
+    EventSeverity,
+    StatusLog,
+    Transaction,
+)
 from app.core.payees import list_quarter_options, quarter_bounds
 from app.core.pdf_generator import MAX_ATC_LINES_PER_CERTIFICATE, count_distinct_atc_codes, generate_certificate_pdf
+from app.core.records import TransactionFields, UnknownAtcCodeError, update_transaction
 from app.core.search import search_certificates
 from app.core.security import mask_tin
 from app.ui.components.cards import status_badge
@@ -77,7 +88,7 @@ def _certificate_drawer(session, certificate_id: int, current_user: str) -> None
             "rows will overlap on the printed PDF. Review before generating."
         )
 
-    tab_summary, tab_timeline, tab_actions = st.tabs(["Summary", "Timeline", "Actions"])
+    tab_summary, tab_timeline, tab_edit, tab_actions = st.tabs(["Summary", "Timeline", "Edit", "Actions"])
 
     with tab_summary:
         render_certificate_metrics(cert)
@@ -102,6 +113,82 @@ def _certificate_drawer(session, certificate_id: int, current_user: str) -> None
             if entry.note:
                 st.caption(f"Note: {entry.note}")
             st.write("")
+
+    with tab_edit:
+        st.caption(
+            "Edit a transaction's own data — tax base, rate, EWT, and amount paid are "
+            "recomputed the same way the importer computes them, never typed directly. "
+            "Saving refreshes this certificate's totals and, if a PDF was already "
+            "generated, regenerates it so the PDF never drifts from the data behind it."
+        )
+        atc_options = [a.code for a in session.query(AtcCode).order_by(AtcCode.code).all()]
+        edit_transactions = (
+            session.query(Transaction)
+            .join(CertificateTransaction, CertificateTransaction.transaction_id == Transaction.id)
+            .filter(CertificateTransaction.certificate_id == cert.id)
+            .order_by(Transaction.id)
+            .all()
+        )
+        if not edit_transactions:
+            st.caption("No transactions linked to this certificate.")
+        for t in edit_transactions:
+            with st.container(border=True, key=f"edit_txn_{t.id}"):
+                st.markdown(f"**{t.reference_no}**")
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_ref = st.text_input("Bill/Reference No.", value=t.reference_no, key=f"edit_ref_{t.id}")
+                    atc_index = atc_options.index(t.atc_code) if t.atc_code in atc_options else 0
+                    new_atc = st.selectbox("ATC code", options=atc_options, index=atc_index, key=f"edit_atc_{t.id}")
+                with c2:
+                    new_gross = st.number_input(
+                        "Gross amount (₱)", value=float(t.gross_amount), min_value=0.0, step=100.0,
+                        format="%.2f", key=f"edit_gross_{t.id}",
+                    )
+                    new_billing = st.number_input(
+                        "Total billing (₱)", value=float(t.total_billing), min_value=0.0, step=100.0,
+                        format="%.2f", key=f"edit_billing_{t.id}",
+                    )
+                new_date = st.date_input(
+                    "Invoice date",
+                    value=t.invoice_date.date() if t.invoice_date else None,
+                    key=f"edit_date_{t.id}",
+                )
+                st.caption(
+                    f"Currently on file: Tax base ₱{t.tax_base:,.2f} · Rate {t.rate_applied} · "
+                    f"EWT ₱{t.tax_withheld:,.2f} · Amount paid ₱{t.amount_paid:,.2f}"
+                )
+                if st.button("Save changes", key=f"save_txn_{t.id}", type="primary"):
+                    try:
+                        update_transaction(
+                            session,
+                            t,
+                            TransactionFields(
+                                reference_no=new_ref,
+                                atc_code=new_atc,
+                                gross_amount=Decimal(str(new_gross)),
+                                total_billing=Decimal(str(new_billing)),
+                                invoice_date=datetime.combine(new_date, datetime.min.time()) if new_date else None,
+                            ),
+                            current_user,
+                        )
+                        recompute_totals(session, cert)
+                        if cert.pdf_unsigned_path:
+                            from app.config import settings
+
+                            generate_certificate_pdf(session, cert, settings.generated_pdfs_dir)
+                            log_event(
+                                session,
+                                category=EventCategory.PDF_GENERATION,
+                                severity=EventSeverity.INFO,
+                                message=f"Regenerated unsigned PDF for certificate #{cert.id} after a transaction edit.",
+                                certificate_id=cert.id,
+                            )
+                        session.commit()
+                        st.success("Transaction updated.")
+                        st.rerun()
+                    except UnknownAtcCodeError as exc:
+                        session.rollback()
+                        st.error(str(exc))
 
     with tab_actions:
         st.markdown("**Generate PDF**")
