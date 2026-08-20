@@ -21,11 +21,13 @@ from app.core.pdf_generator import generate_certificate_pdf
 from app.core.records import DuplicateTinError, PayeeFields, update_payee
 from app.core.security import mask_tin
 from app.ui.components.cards import status_badge
+from app.ui.components.pagination import paginate, reset_if_filters_changed
 from app.ui.layout import render_top_bar
 from app.ui.state import current_quarter_bounds
 from app.ui.styles import CERT_STATUS_VARIANT
 
 _NON_DIGITS = re.compile(r"\D+")
+_PAGE_SIZE = 10
 
 
 def _digits_only(value: str) -> str:
@@ -201,7 +203,7 @@ def render_payees_view(session, current_user: str) -> None:
         summaries = [
             s
             for s in all_summaries
-            if needle in s.payee.registered_name.lower() or needle_digits in _digits_only(s.payee.tin)
+            if needle in s.payee.registered_name.lower() or (needle_digits and needle_digits in _digits_only(s.payee.tin))
         ]
     else:
         summaries = all_summaries
@@ -211,10 +213,13 @@ def render_payees_view(session, current_user: str) -> None:
         return
 
     period_start, period_end = current_quarter_bounds()
-    st.caption(f"{len(summaries)} payee(s)")
+
+    reset_if_filters_changed("payees_table_page", (search,))
+    page = paginate(len(summaries), _PAGE_SIZE, "payees_table_page")
+    summaries_page = summaries[(page - 1) * _PAGE_SIZE : page * _PAGE_SIZE]
 
     rows = []
-    for s in summaries:
+    for s in summaries_page:
         p = s.payee
         rows.append(
             {
@@ -235,10 +240,18 @@ def render_payees_view(session, current_user: str) -> None:
         on_select="rerun",
         selection_mode="single-row",
         key="payees_table",
+        column_config={
+            "Payee": st.column_config.TextColumn(width="medium"),
+            "TIN": st.column_config.TextColumn(width="small"),
+            "Certificates": st.column_config.NumberColumn(width="small"),
+            "Last Certificate": st.column_config.TextColumn(width="small"),
+            "Outstanding": st.column_config.NumberColumn(width="small"),
+            "Active this quarter": st.column_config.TextColumn(width="small"),
+        },
     )
     selected_rows = event.selection["rows"] if event and event.selection else []
     if selected_rows:
-        payee = summaries[selected_rows[0]].payee
+        payee = summaries_page[selected_rows[0]].payee
         if st.button(f"Open {payee.registered_name} →", key="open_payee_drawer", type="primary"):
             st.session_state["selected_payee_id"] = payee.id
             _payee_drawer(session, payee.id, current_user)

@@ -10,7 +10,7 @@ import streamlit as st
 
 from app.core.dashboard import attention_items, quarter_kpis, quarterly_summary, recent_activity, workflow_stage_counts
 from app.core.models import CertificateStatus, Payor
-from app.ui.layout import render_top_bar
+from app.ui.layout import render_quarter_picker, render_top_bar
 from app.ui.state import current_quarter_bounds, current_quarter_label
 from app.ui.styles import page_tokens, status_colors
 
@@ -56,10 +56,15 @@ def render_overview_view(session, current_user: str) -> None:
 
     t = page_tokens(st.session_state["theme"])
     colors = status_colors(st.session_state["theme"])
+
+    greet_col, quarter_col = st.columns([4, 1.3])
+    with greet_col:
+        st.markdown(f"### {_greeting()}, {current_user.replace('_', ' ').title()}.")
+    with quarter_col:
+        render_quarter_picker()
+
     period_start, period_end = current_quarter_bounds()
     quarter_label = current_quarter_label()
-
-    st.markdown(f"### {_greeting()}, {current_user.replace('_', ' ').title()}.")
     st.caption(f"Here's what needs your attention this {quarter_label}.")
 
     kpis = quarter_kpis(session, period_start, period_end)
@@ -79,7 +84,7 @@ def render_overview_view(session, current_user: str) -> None:
                 f'<div class="kpi-card" style="background:{bg};border-color:{border};">'
                 f'<div class="kpi-value" style="color:{fg};">{kpi_values[key]}</div>'
                 f'<div class="kpi-label" style="color:{t["text_secondary"]};">{_KPI_LABEL[key]}</div>'
-                f'<div class="kpi-sub" style="color:{t["text_faint"]};">{_KPI_SUB[key]}</div>'
+                f'<div class="kpi-sub" style="color:{t["text_muted"]};">{_KPI_SUB[key]}</div>'
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -93,7 +98,7 @@ def render_overview_view(session, current_user: str) -> None:
     with st.container(border=True):
         st.markdown(
             f'<p style="font-size:0.72rem;font-weight:600;letter-spacing:0.04em;'
-            f'text-transform:uppercase;color:{t["text_faint"]};margin-bottom:6px;">'
+            f'text-transform:uppercase;color:{t["text_muted"]};margin-bottom:6px;">'
             f"{quarter_label} Workflow Progress</p>",
             unsafe_allow_html=True,
         )
@@ -103,7 +108,7 @@ def render_overview_view(session, current_user: str) -> None:
         for col, (status_value, label, count) in zip(stage_cols, stages):
             with col:
                 num_bg = t["accent"] if count > 0 else t["border"]
-                num_fg = "#FFFFFF" if count > 0 else t["text_faint"]
+                num_fg = "#FFFFFF" if count > 0 else t["text_muted"]
                 st.markdown(
                     f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">'
                     f'<div class="workflow-stage-num" style="background:{num_bg};color:{num_fg};">{count}</div>'
@@ -165,7 +170,7 @@ def render_overview_view(session, current_user: str) -> None:
                 st.markdown(
                     f'<div style="padding:6px 0;border-bottom:1px solid {t["border_subtle"]};">'
                     f'<span style="font-size:0.85rem;color:{t["text_secondary"]};">{entry.message}</span><br/>'
-                    f'<span style="font-size:0.72rem;color:{t["text_faint"]};">'
+                    f'<span style="font-size:0.72rem;color:{t["text_muted"]};">'
                     f'{entry.category} · {entry.timestamp:%Y-%m-%d %H:%M}</span>'
                     f"</div>",
                     unsafe_allow_html=True,
@@ -177,7 +182,7 @@ def render_overview_view(session, current_user: str) -> None:
     with st.container(border=True):
         st.markdown(
             f'<p style="font-size:0.72rem;font-weight:600;letter-spacing:0.04em;'
-            f'text-transform:uppercase;color:{t["text_faint"]};margin-bottom:6px;">'
+            f'text-transform:uppercase;color:{t["text_muted"]};margin-bottom:6px;">'
             f"{quarter_label} Summary</p>",
             unsafe_allow_html=True,
         )
@@ -194,6 +199,6 @@ def render_overview_view(session, current_user: str) -> None:
                 st.markdown(
                     f'<p class="tabular" style="font-size:1.15rem;font-weight:700;color:{t["text_primary"]};margin:0;">{value}</p>'
                     f'<p style="font-size:0.78rem;font-weight:600;color:{t["text_secondary"]};margin:0;">{label}</p>'
-                    f'<p style="font-size:0.72rem;color:{t["text_faint"]};margin:0;">{sub}</p>',
+                    f'<p style="font-size:0.72rem;color:{t["text_muted"]};margin:0;">{sub}</p>',
                     unsafe_allow_html=True,
                 )

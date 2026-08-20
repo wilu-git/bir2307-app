@@ -26,7 +26,7 @@ _DEFAULTS = {
     "global_quarter": None,  # (year, quarter); None resolves to the real current quarter
     "global_search": "",
     # Certificates workspace
-    "certificates_filters": {"search": "", "status": "(all)"},
+    "certificates_filters": {"search": "", "status": "(all)", "quarter": "(any)", "year": "(any)"},
     "certificates_selected_ids": set(),
     "selected_certificate_id": None,
     # Payees workspace
