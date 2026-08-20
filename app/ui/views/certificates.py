@@ -8,7 +8,6 @@ import io
 import re
 import zipfile
 
-import pandas as pd
 import streamlit as st
 
 from app.core.certificates import bulk_transition_status, transition_status
@@ -267,49 +266,62 @@ def render_certificates_view(session, current_user: str) -> None:
     page = paginate(len(certs), _PAGE_SIZE, "cert_table_page")
     certs_page = certs[(page - 1) * _PAGE_SIZE : page * _PAGE_SIZE]
 
-    rows = []
-    for c in certs_page:
-        rows.append(
-            {
-                "Payee": c.payee.registered_name,
-                "TIN": mask_tin(c.payee.tin),
-                "Quarter": _quarter_label(c),
-                "Amount Paid": _amount_paid(c),
-                "EWT": float(c.total_tax_withheld),
-                "Status": _STATUS_LABEL[c.status.value],
-                "Updated": c.updated_at.strftime("%Y-%m-%d %H:%M") if c.updated_at else "",
-            }
-        )
-    df = pd.DataFrame(rows)
+    # Selection is a persistent id set (not tied to the current page or
+    # st.dataframe's own selection state) so bulk actions can span pages —
+    # pruned against the current filter results so a stale pick from a
+    # since-changed filter doesn't silently linger.
+    selected_ids: set[int] = st.session_state["certificates_selected_ids"] & {c.id for c in certs}
 
-    event = st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="multi-row",
-        key="cert_table",
-        column_config={
-            "Payee": st.column_config.TextColumn(width="medium"),
-            "TIN": st.column_config.TextColumn(width="small"),
-            "Quarter": st.column_config.TextColumn(width="small"),
-            "Amount Paid": st.column_config.NumberColumn(format="₱%.2f", width="small"),
-            "EWT": st.column_config.NumberColumn(format="₱%.2f", width="small"),
-            "Status": st.column_config.TextColumn(width="small"),
-            "Updated": st.column_config.TextColumn(width="small"),
-        },
-    )
-    selected_rows = event.selection["rows"] if event and event.selection else []
-    selected_certs = [certs_page[i] for i in selected_rows]
+    for c in certs_page:
+        with st.container(border=True, key=f"cert_row_{c.id}"):
+            check_col, main_col, action_col = st.columns([0.5, 4, 1.3])
+            with check_col:
+                checked = st.checkbox(
+                    "Select",
+                    value=c.id in selected_ids,
+                    key=f"cert_check_{c.id}",
+                    label_visibility="collapsed",
+                )
+            if checked:
+                selected_ids.add(c.id)
+            else:
+                selected_ids.discard(c.id)
+
+            with main_col:
+                title_col, badge_col = st.columns([3, 1.3])
+                with title_col:
+                    st.markdown(f"**{c.payee.registered_name}**")
+                    updated = f"{c.updated_at:%Y-%m-%d %H:%M}" if c.updated_at else "—"
+                    st.caption(
+                        f"{mask_tin(c.payee.tin)} · {_quarter_label(c)} · "
+                        f"Paid ₱{_amount_paid(c):,.2f} · EWT ₱{float(c.total_tax_withheld):,.2f} · "
+                        f"Updated {updated}"
+                    )
+                with badge_col:
+                    status_badge(_STATUS_LABEL[c.status.value], CERT_STATUS_VARIANT[c.status.value])
+
+            with action_col:
+                if st.button("Open →", key=f"cert_open_{c.id}", use_container_width=True):
+                    st.session_state["selected_certificate_id"] = c.id
+                    _certificate_drawer(session, c.id, current_user)
+
+    st.session_state["certificates_selected_ids"] = selected_ids
+    selected_certs = [c for c in certs if c.id in selected_ids]
 
     if selected_certs:
-        st.markdown(
-            f'<span style="background:{t["accent_bg"]};'
-            f'color:{t["accent"]};padding:4px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;">'
-            f"{len(selected_certs)} selected</span>",
-            unsafe_allow_html=True,
-        )
-        b_gen, b1, b2, b3, b4 = st.columns([1.6, 1.4, 1.4, 1.4, 4])
+        sel_col, clear_col = st.columns([5, 1])
+        with sel_col:
+            st.markdown(
+                f'<span style="background:{t["accent_bg"]};'
+                f'color:{t["accent"]};padding:4px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;">'
+                f"{len(selected_certs)} selected</span>",
+                unsafe_allow_html=True,
+            )
+        with clear_col:
+            if st.button("Clear", key="cert_clear_selection", use_container_width=True):
+                st.session_state["certificates_selected_ids"] = set()
+                st.rerun()
+        b_gen, b1, b2, b3 = st.columns([1.6, 1.4, 1.4, 1.4])
         with b_gen:
             if st.button("Generate PDF(s)", key="bulk_generate", use_container_width=True):
                 from app.config import settings
@@ -378,8 +390,3 @@ def render_certificates_view(session, current_user: str) -> None:
                 use_container_width=True,
                 disabled=not unsigned_paths,
             )
-        if len(selected_certs) == 1:
-            with b4:
-                if st.button("Open Certificate →", key="open_drawer", type="primary"):
-                    st.session_state["selected_certificate_id"] = selected_certs[0].id
-                    _certificate_drawer(session, selected_certs[0].id, current_user)
