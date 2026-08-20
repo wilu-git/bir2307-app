@@ -416,6 +416,18 @@ div[role="dialog"] {
 }
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #64748B !important; }
 [data-testid="stSidebar"] hr { border-color: #1E293B !important; }
+
+/* Certificate/Payee list rows: in-page card rows (st.container(border=True)
+   + st.columns), used instead of the canvas-rendered st.dataframe grid so
+   the list actually reflows on narrow viewports like any other page
+   content rather than staying a fixed-size embedded widget. Streamlit
+   stacks the row's own columns automatically below its container-width
+   threshold; this trims padding/badge size to match once that happens so
+   stacked rows stay compact instead of ballooning in height. */
+@media (max-width: 640px) {
+    div[data-testid="stVerticalBlockBorderWrapper"] { padding: 10px !important; }
+    .status-badge { font-size: 0.7rem; padding: 2px 8px; }
+}
 </style>
 """
 
