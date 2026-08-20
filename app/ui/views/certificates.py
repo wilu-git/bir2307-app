@@ -14,16 +14,18 @@ import streamlit as st
 from app.core.certificates import bulk_transition_status, transition_status
 from app.core.logging_config import log_event
 from app.core.models import CertificateStatus, EventCategory, EventSeverity, StatusLog
+from app.core.payees import list_quarter_options, quarter_bounds
 from app.core.pdf_generator import MAX_ATC_LINES_PER_CERTIFICATE, count_distinct_atc_codes, generate_certificate_pdf
 from app.core.search import search_certificates
 from app.core.security import mask_tin
 from app.ui.components.cards import status_badge
+from app.ui.components.pagination import paginate, reset_if_filters_changed
 from app.ui.components.preview import render_certificate_metrics, render_pdf_preview
 from app.ui.layout import render_top_bar
-from app.ui.state import current_quarter_bounds
 from app.ui.styles import CERT_STATUS_VARIANT, page_tokens
 
 _NON_DIGITS = re.compile(r"\D+")
+_PAGE_SIZE = 10
 
 
 def _digits_only(value: str) -> str:
@@ -31,6 +33,8 @@ def _digits_only(value: str) -> str:
 
 
 _STATUS_OPTIONS = ["(all)"] + [s.value for s in CertificateStatus]
+_QUARTER_OPTIONS = ["(any)", "Q1", "Q2", "Q3", "Q4"]
+_YEAR_OPTIONS = ["(any)"] + sorted({year for year, _q in list_quarter_options()}, reverse=True)
 _STATUS_LABEL = {
     "draft": "Draft",
     "generated": "Generated",
@@ -42,6 +46,10 @@ _STATUS_LABEL = {
 
 def _amount_paid(cert) -> float:
     return float(cert.total_gross - cert.total_tax_withheld)
+
+
+def _quarter_label(cert) -> str:
+    return f"Q{(cert.period_start.month - 1) // 3 + 1} {cert.period_start.year}"
 
 
 @st.dialog("Certificate", width="large")
@@ -182,7 +190,7 @@ def render_certificates_view(session, current_user: str) -> None:
         st.button("Export", disabled=True, use_container_width=True, help="Not yet available — see gap list.")
 
     filters = st.session_state["certificates_filters"]
-    search_col, status_col = st.columns([3, 1.4])
+    search_col, status_col, filters_col = st.columns([3, 1.4, 1.2])
     with search_col:
         search = st.text_input(
             "Search certificates",
@@ -199,9 +207,40 @@ def render_certificates_view(session, current_user: str) -> None:
             label_visibility="collapsed",
             key="cert_status_filter",
         )
-    st.session_state["certificates_filters"] = {"search": search, "status": status}
+    with filters_col:
+        # Quarter/Year is an *optional* period filter — unlike the old
+        # top-bar quarter selector, leaving both on "(any)" shows every
+        # certificate regardless of period rather than hiding everything
+        # outside whatever quarter happens to be "current" today.
+        active_period = filters["quarter"] != "(any)" or filters["year"] != "(any)"
+        with st.popover(
+            f"Filters{' •' if active_period else ''}", use_container_width=True
+        ):
+            st.caption("Optional — narrows by period. Leave both on (any) to see every certificate.")
+            q_col, y_col = st.columns(2)
+            with q_col:
+                quarter = st.selectbox(
+                    "Quarter",
+                    options=_QUARTER_OPTIONS,
+                    index=_QUARTER_OPTIONS.index(filters["quarter"]) if filters["quarter"] in _QUARTER_OPTIONS else 0,
+                    key="cert_quarter_filter",
+                )
+            with y_col:
+                year = st.selectbox(
+                    "Year",
+                    options=_YEAR_OPTIONS,
+                    index=_YEAR_OPTIONS.index(filters["year"]) if filters["year"] in _YEAR_OPTIONS else 0,
+                    key="cert_year_filter",
+                )
+            if active_period and st.button("Clear period filter", key="cert_clear_period"):
+                quarter, year = "(any)", "(any)"
+                st.rerun()
+    st.session_state["certificates_filters"] = {"search": search, "status": status, "quarter": quarter, "year": year}
 
-    period_start, period_end = current_quarter_bounds()
+    if quarter != "(any)" and year != "(any)":
+        period_start, period_end = quarter_bounds(int(year), int(quarter[1]))
+    else:
+        period_start, period_end = None, None
     status_filter = CertificateStatus(status) if status != "(all)" else None
     # search_certificates() ANDs name/tin filters — a single search box needs
     # OR semantics (match name *or* TIN), so fetch by period/status only and
@@ -215,7 +254,7 @@ def render_certificates_view(session, current_user: str) -> None:
         certs = [
             c
             for c in result.certificates
-            if needle in c.payee.registered_name.lower() or needle_digits in _digits_only(c.payee.tin)
+            if needle in c.payee.registered_name.lower() or (needle_digits and needle_digits in _digits_only(c.payee.tin))
         ]
     else:
         certs = result.certificates
@@ -224,13 +263,17 @@ def render_certificates_view(session, current_user: str) -> None:
         st.info("No certificates match your current filters.")
         return
 
+    reset_if_filters_changed("cert_table_page", (search, status, quarter, year))
+    page = paginate(len(certs), _PAGE_SIZE, "cert_table_page")
+    certs_page = certs[(page - 1) * _PAGE_SIZE : page * _PAGE_SIZE]
+
     rows = []
-    for c in certs:
+    for c in certs_page:
         rows.append(
             {
                 "Payee": c.payee.registered_name,
                 "TIN": mask_tin(c.payee.tin),
-                "Quarter": f"{c.period_start:%Y-%m} → {c.period_end:%Y-%m}",
+                "Quarter": _quarter_label(c),
                 "Amount Paid": _amount_paid(c),
                 "EWT": float(c.total_tax_withheld),
                 "Status": _STATUS_LABEL[c.status.value],
@@ -239,7 +282,6 @@ def render_certificates_view(session, current_user: str) -> None:
         )
     df = pd.DataFrame(rows)
 
-    st.caption(f"{len(certs)} certificate(s)")
     event = st.dataframe(
         df,
         use_container_width=True,
@@ -248,12 +290,17 @@ def render_certificates_view(session, current_user: str) -> None:
         selection_mode="multi-row",
         key="cert_table",
         column_config={
-            "Amount Paid": st.column_config.NumberColumn(format="₱%.2f"),
-            "EWT": st.column_config.NumberColumn(format="₱%.2f"),
+            "Payee": st.column_config.TextColumn(width="medium"),
+            "TIN": st.column_config.TextColumn(width="small"),
+            "Quarter": st.column_config.TextColumn(width="small"),
+            "Amount Paid": st.column_config.NumberColumn(format="₱%.2f", width="small"),
+            "EWT": st.column_config.NumberColumn(format="₱%.2f", width="small"),
+            "Status": st.column_config.TextColumn(width="small"),
+            "Updated": st.column_config.TextColumn(width="small"),
         },
     )
     selected_rows = event.selection["rows"] if event and event.selection else []
-    selected_certs = [certs[i] for i in selected_rows]
+    selected_certs = [certs_page[i] for i in selected_rows]
 
     if selected_certs:
         st.markdown(

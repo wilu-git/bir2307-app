@@ -10,7 +10,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.core.dashboard import quarterly_summary
-from app.ui.layout import render_top_bar
+from app.ui.layout import render_quarter_picker, render_top_bar
 from app.ui.state import current_quarter_bounds, current_quarter_label
 from app.ui.styles import page_tokens, status_colors
 
@@ -31,7 +31,11 @@ def render_reports_view(session, current_user: str) -> None:
     t = page_tokens(st.session_state["theme"])
     colors = status_colors(st.session_state["theme"])
 
-    st.markdown("### Reports")
+    header_col, quarter_col = st.columns([4, 1.3])
+    with header_col:
+        st.markdown("### Reports")
+    with quarter_col:
+        render_quarter_picker()
     st.caption("Quarterly summaries, filing packets, and data exports.")
 
     period_start, period_end = current_quarter_bounds()
@@ -58,7 +62,7 @@ def render_reports_view(session, current_user: str) -> None:
         st.write("")
         st.markdown(
             f'<p style="font-size:0.72rem;font-weight:600;letter-spacing:0.04em;'
-            f'text-transform:uppercase;color:{t["text_faint"]};margin-bottom:6px;">Status Distribution</p>',
+            f'text-transform:uppercase;color:{t["text_muted"]};margin-bottom:6px;">Status Distribution</p>',
             unsafe_allow_html=True,
         )
         total = max(summary.certificate_count, 1)

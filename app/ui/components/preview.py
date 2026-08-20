@@ -52,22 +52,51 @@ def render_pdf_preview(pdf_path: str | Path | None, label: str, key_suffix: str)
     )
 
 
+def _field(label: str, value: str, t: dict) -> str:
+    return (
+        f'<div style="margin-bottom:14px;">'
+        f'<p style="font-size:0.72rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;'
+        f'color:{t["text_muted"]};margin:0 0 4px 0;">{label}</p>'
+        f'<p style="font-size:0.95rem;font-weight:700;color:{t["text_primary"]};margin:0;">{value}</p>'
+        f"</div>"
+    )
+
+
 def render_certificate_metrics(certificate) -> None:
     """The metadata grid: Amount Paid / Tax Base / EWT / period / TIN /
     address — the certificate-level facts the Summary drawer tab shows
-    above the PDF preview."""
+    above the PDF preview. Rendered as one bordered card of uniform
+    uppercase-label/bold-value fields (matching the redesign reference's
+    field-grid, see app/ui/styles.py's module docstring) instead of mixed
+    st.metric widgets + inline text, which read as disjointed."""
     payee = certificate.payee
     amount_paid = certificate.total_gross - certificate.total_tax_withheld
-    c1, c2 = st.columns(2)
-    c1.metric("Amount paid", f"₱{amount_paid:,.2f}")
-    c2.metric("EWT withheld", f"₱{certificate.total_tax_withheld:,.2f}")
-    c3, c4 = st.columns(2)
-    c3.metric("Total gross", f"₱{certificate.total_gross:,.2f}")
-    c4.metric(
-        "Date generated",
-        f"{certificate.generated_at:%Y-%m-%d}" if certificate.generated_at else "—",
-    )
-    st.caption(f"Period: {certificate.period_start:%Y-%m-%d} to {certificate.period_end:%Y-%m-%d}")
-    st.write(f"**{payee.registered_name}**")
-    st.write(f"**Full TIN:** {payee.tin} &nbsp;·&nbsp; **Masked:** {mask_tin(payee.tin)}", unsafe_allow_html=False)
-    st.write(f"**Address:** {payee.address or '—'}")
+    t = page_tokens(st.session_state.get("theme", "light"))
+
+    with st.container(border=True):
+        st.markdown(
+            f'<p style="font-size:0.85rem;font-weight:700;color:{t["text_primary"]};margin:0 0 12px 0;">'
+            f"Certificate Details</p>",
+            unsafe_allow_html=True,
+        )
+        row1 = st.columns(2)
+        row1[0].markdown(_field("Amount Paid", f"₱{amount_paid:,.2f}", t), unsafe_allow_html=True)
+        row1[1].markdown(_field("Tax Base", f"₱{certificate.total_gross:,.2f}", t), unsafe_allow_html=True)
+        row2 = st.columns(2)
+        row2[0].markdown(_field("EWT Withheld", f"₱{certificate.total_tax_withheld:,.2f}", t), unsafe_allow_html=True)
+        row2[1].markdown(
+            _field(
+                "Date Generated",
+                f"{certificate.generated_at:%Y-%m-%d}" if certificate.generated_at else "—",
+                t,
+            ),
+            unsafe_allow_html=True,
+        )
+        row3 = st.columns(2)
+        row3[0].markdown(
+            _field("Period", f"{certificate.period_start:%Y-%m-%d} to {certificate.period_end:%Y-%m-%d}", t),
+            unsafe_allow_html=True,
+        )
+        row3[1].markdown(_field("TIN", f"{payee.tin} ({mask_tin(payee.tin)})", t), unsafe_allow_html=True)
+        st.markdown(_field("Payee", payee.registered_name, t), unsafe_allow_html=True)
+        st.markdown(_field("Address", payee.address or "—", t), unsafe_allow_html=True)

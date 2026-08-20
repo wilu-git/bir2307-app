@@ -21,6 +21,14 @@ Scoped to `st.container(key=...)` hooks (Streamlit >=1.37 emits an
 `st-key-<key>` class on that container's DOM node) and stable Streamlit
 test-ids — never blanket tag selectors — so this can't bleed into
 Streamlit's own chrome or fight a future Streamlit release's markup.
+
+Contrast: `text_faint` used to be the color for captions, field labels,
+KPI sub-text, timestamps, etc. — real, meaningful text — but at 2.4-2.6:1
+(light) / 3.7-3.9:1 (dark) it fails WCAG AA's 4.5:1 minimum for normal
+text, which is what "hard to read" reports traced back to. `text_faint` is
+now decorative-only (borders, placeholder ghost text) and every call site
+that renders actual text uses `text_muted` instead, which was retuned to
+clear 4.5:1 on both themes' surface/bg colors.
 """
 
 from __future__ import annotations
@@ -39,8 +47,8 @@ LIGHT = {
     "border_subtle": "#F1F5F9",
     "text_primary": "#0F172A",
     "text_secondary": "#334155",
-    "text_muted": "#64748B",
-    "text_faint": "#94A3B8",
+    "text_muted": "#5B6B80",
+    "text_faint": "#8494A8",
     "accent": "#2563EB",
     "accent_hover": "#1D4ED8",
     "accent_bg": "#EFF6FF",
@@ -59,7 +67,7 @@ DARK = {
     "text_primary": "#F1F5F9",
     "text_secondary": "#CBD5E1",
     "text_muted": "#94A3B8",
-    "text_faint": "#64748B",
+    "text_faint": "#72839A",
     "accent": "#3B82F6",
     "accent_hover": "#60A5FA",
     "accent_bg": "rgba(37, 99, 235, 0.16)",
@@ -83,7 +91,7 @@ SIDEBAR = {
 # Certificate-status badge variants, light/dark. "void" additionally gets a
 # strikethrough via the --void modifier class.
 STATUS_LIGHT = {
-    "neutral": ("#F1F5F9", "#64748B", "#E2E8F0"),
+    "neutral": ("#F1F5F9", "#475569", "#E2E8F0"),
     "accent": ("#EFF6FF", "#1D4ED8", "#DBEAFE"),
     "violet": ("#F5F3FF", "#6D28D9", "#EDE9FE"),
     "success": ("#ECFDF5", "#047857", "#D1FAE5"),
@@ -144,7 +152,7 @@ h1, h2, h3, h4, h5, [data-testid="stMarkdownContainer"] h1,
 [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {{
     color: {t["text_primary"]} !important;
 }}
-[data-testid="stCaptionContainer"], .stCaption {{ color: {t["text_faint"]} !important; }}
+[data-testid="stCaptionContainer"], .stCaption {{ color: {t["text_muted"]} !important; }}
 
 /* Bordered containers / cards */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
@@ -153,29 +161,37 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
     border-radius: 10px !important;
 }}
 
-/* Buttons */
+/* Buttons — includes stPopoverButton (e.g. the Certificates "Filters"
+   trigger), which is a sibling testid to stButton, not nested inside it,
+   so the plain div[data-testid="stButton"] selector above never reached
+   it and it rendered as an unstyled white box in dark mode. */
 div[data-testid="stButton"] button[kind="primary"],
+button[data-testid="stPopoverButton"][kind="primary"],
 div[data-testid="stDownloadButton"] button {{
     background-color: {t["accent"]};
     border-color: {t["accent"]};
     color: #FFFFFF;
 }}
 div[data-testid="stButton"] button[kind="primary"]:hover,
+button[data-testid="stPopoverButton"][kind="primary"]:hover,
 div[data-testid="stDownloadButton"] button:hover {{
     background-color: {t["accent_hover"]};
     border-color: {t["accent_hover"]};
 }}
-div[data-testid="stButton"] button[kind="secondary"] {{
+div[data-testid="stButton"] button[kind="secondary"],
+button[data-testid="stPopoverButton"][kind="secondary"] {{
     background-color: {t["surface"]};
     border-color: {t["border"]};
     color: {t["text_secondary"]};
 }}
-div[data-testid="stButton"] button[kind="secondary"]:hover {{
+div[data-testid="stButton"] button[kind="secondary"]:hover,
+button[data-testid="stPopoverButton"][kind="secondary"]:hover {{
     background-color: {t["surface_alt"]};
     border-color: {t["text_faint"]};
     color: {t["text_primary"]};
 }}
-div[data-testid="stButton"] button:disabled {{ opacity: 0.45; }}
+div[data-testid="stButton"] button:disabled,
+button[data-testid="stPopoverButton"]:disabled {{ opacity: 0.45; }}
 
 /* Inputs / selects / checkboxes / date & number inputs */
 div[data-testid="stTextInput"] input,
@@ -187,7 +203,7 @@ div[data-baseweb="input"] {{
     border-color: {t["border"]} !important;
     color: {t["text_primary"]} !important;
 }}
-div[data-testid="stTextInput"] input::placeholder {{ color: {t["text_faint"]} !important; }}
+div[data-testid="stTextInput"] input::placeholder {{ color: {t["text_muted"]} !important; }}
 [data-baseweb="popover"] [role="listbox"] {{
     background-color: {t["surface"]} !important;
     border-color: {t["border"]} !important;
@@ -216,6 +232,15 @@ label[data-testid="stWidgetLabel"] p {{ color: {t["text_muted"]} !important; }}
 }}
 [data-testid="stExpander"] summary {{ color: {t["text_primary"]} !important; }}
 
+/* Popover content panel (e.g. Certificates' "Filters" dropdown) — like
+   stPopoverButton above, this is a separate testid the blanket rules never
+   reached, so it stayed hardcoded to the light background always. */
+div[data-testid="stPopoverBody"] {{
+    background-color: {t["surface"]} !important;
+    border-color: {t["border"]} !important;
+}}
+div[data-testid="stPopoverBody"] * {{ color: {t["text_secondary"]}; }}
+
 /* Dialog (used as our "drawer" / import wizard modal) */
 div[role="dialog"] {{
     background-color: {t["surface"]} !important;
@@ -224,6 +249,12 @@ div[role="dialog"] {{
 div[role="dialog"] * {{ color: {t["text_secondary"]}; }}
 div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{
     color: {t["text_primary"]} !important;
+}}
+
+/* Slide-out drawer backdrop: dimmed just enough to show a modal is open,
+   without fully blacking out the rest of the interface behind it. */
+div[data-testid="stDialog"] > div {{
+    background: {t["overlay"]} !important;
 }}
 
 /* Tables (st.dataframe) */
@@ -335,6 +366,35 @@ h1, h2, h3, [data-testid="stMarkdownContainer"] h1, [data-testid="stMarkdownCont
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .timeline-line { width: 1px; flex: 1; margin: 2px 0; min-height: 24px; }
+
+/* Slide-out drawer: Streamlit's st.dialog only offers a centered modal
+   ("Streamlit has no true slide-out panel" — see app/main.py's docstring),
+   so this restyles that same centered-dialog DOM (confirmed via direct
+   inspection: div[data-testid="stDialog"] > div is the full-viewport
+   backdrop/centering flexbox, and div[role="dialog"] is the actual panel)
+   into a right-anchored, full-height panel instead. It is still a modal
+   underneath — Streamlit gives no way to make it non-blocking — but visually
+   it reads as a drawer, not a centered dialog stealing the whole screen. */
+div[data-testid="stDialog"] > div {
+    align-items: stretch !important;
+    justify-content: flex-end !important;
+}
+div[role="dialog"] {
+    position: relative;
+    top: 0 !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    width: 520px !important;
+    max-width: 92vw !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
+    animation: bir-drawer-slide-in 0.2s ease-out;
+}
+@keyframes bir-drawer-slide-in {
+    from { transform: translateX(32px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
 
 /* Sidebar is always dark regardless of app theme (matches the source
    design's fixed bg-sidebar) — these selectors are more specific than the
