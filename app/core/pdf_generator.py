@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import io
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -224,42 +226,59 @@ def count_distinct_atc_codes(session: Session, certificate: Certificate) -> int:
     )
 
 
-def generate_certificate_pdf(session: Session, certificate: Certificate, output_dir: Path) -> Path:
-    """Overlay `certificate`'s data onto the official template and save it.
+@dataclass(frozen=True)
+class LineItem:
+    """One Part III table row — either derived from a group of real
+    `Transaction` rows (`generate_certificate_pdf`) or typed by hand
+    (`generate_manual_form_pdf`); the overlay-drawing code below doesn't
+    care which."""
 
-    Transactions are grouped by ATC code (one row per code — spec's
-    "multiple ATC line items per certificate", generated dynamically, not
-    a fixed number of slots) and each transaction's gross amount is
-    bucketed into its quarter month from `invoice_date`, falling back to
-    the period's first month when a transaction has no recorded date.
+    atc_code: str
+    description: str
+    month_amounts: tuple[Decimal, Decimal, Decimal]
+    tax_withheld: Decimal
+
+    @property
+    def total(self) -> Decimal:
+        return sum(self.month_amounts, Decimal("0"))
+
+
+@dataclass(frozen=True)
+class PartyFields:
+    """Payee or payor identity as plain values — the same shape whether
+    they came from a `Payee`/`Payor` ORM row or were typed by hand."""
+
+    tin: str
+    name: str
+    address: str
+    zip_code: str | None
+
+
+def _draw_overlay(
+    c: canvas.Canvas,
+    *,
+    period_start: date,
+    period_end: date,
+    payee: PartyFields,
+    payor: PartyFields,
+    line_items: list[LineItem],
+) -> tuple[Decimal, Decimal]:
+    """Draws every field onto `c` (a fresh, template-page-sized canvas).
+
+    Returns (total_amount, total_tax) actually drawn, so callers that need
+    the grand totals (e.g. for their own bookkeeping) don't have to
+    re-sum `line_items` themselves.
     """
-    payee = certificate.payee
-    payor = certificate.payor
-    transactions = (
-        session.query(Transaction)
-        .join(CertificateTransaction, CertificateTransaction.transaction_id == Transaction.id)
-        .filter(CertificateTransaction.certificate_id == certificate.id)
-        .all()
-    )
-
-    by_atc: dict[str, list[Transaction]] = defaultdict(list)
-    for t in transactions:
-        by_atc[t.atc_code].append(t)
-    atc_descriptions = {a.code: a.description for a in session.query(AtcCode).all()}
-
-    overlay_buffer = io.BytesIO()
-    c = canvas.Canvas(overlay_buffer, pagesize=(letter[0], PAGE_HEIGHT))
-
     _draw_digits(
         c,
-        certificate.period_start.strftime("%m%d%Y"),
+        period_start.strftime("%m%d%Y"),
         PERIOD_FROM_CELL_CENTERS,
         _y(PERIOD_FROM_BOX_TOP, NUDGE_DIGITS),
         FONT_SIZE_DIGITS,
     )
     _draw_digits(
         c,
-        certificate.period_end.strftime("%m%d%Y"),
+        period_end.strftime("%m%d%Y"),
         PERIOD_TO_CELL_CENTERS,
         _y(PERIOD_TO_BOX_TOP, NUDGE_DIGITS),
         FONT_SIZE_DIGITS,
@@ -287,7 +306,7 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     c.drawString(
         PAYEE_NAME_BOX[1],
         name_y(PAYEE_NAME_BOX[0]),
-        _fit_text(payee.registered_name, name_width, FONT_NAME, FONT_SIZE_FIELD),
+        _fit_text(payee.name, name_width, FONT_NAME, FONT_SIZE_FIELD),
     )
     c.drawString(
         PAYEE_ADDRESS_BOX[1],
@@ -309,7 +328,7 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     c.drawString(
         PAYOR_NAME_BOX[1],
         name_y(PAYOR_NAME_BOX[0]),
-        _fit_text(payor.registered_name, payor_name_width, FONT_NAME, FONT_SIZE_FIELD),
+        _fit_text(payor.name, payor_name_width, FONT_NAME, FONT_SIZE_FIELD),
     )
     c.drawString(
         PAYOR_ADDRESS_BOX[1],
@@ -328,29 +347,20 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     total_amount = Decimal("0")
     total_tax = Decimal("0")
     row_top = TABLE_FIRST_ROW_TOP
-    for atc_code, txs in sorted(by_atc.items()):
-        month_amounts = [Decimal("0"), Decimal("0"), Decimal("0")]
-        tax_for_code = Decimal("0")
-        for t in txs:
-            month_idx = _month_index_in_quarter(t.invoice_date, certificate.period_start)
-            month_amounts[month_idx] += t.gross_amount
-            tax_for_code += t.tax_withheld
-        row_total = sum(month_amounts, Decimal("0"))
+    for item in line_items:
+        row_total = item.total
         total_amount += row_total
-        total_tax += tax_for_code
+        total_tax += item.tax_withheld
 
         y = _y(min(row_top, TABLE_LAST_ROW_TOP), NUDGE_TABLE_ROW)
         c.setFont(FONT_NAME, FONT_SIZE_TABLE)
-        description = SHORT_DESCRIPTIONS.get(atc_code) or _fit_text(
-            atc_descriptions.get(atc_code) or "", COL_DESCRIPTION_WIDTH, FONT_NAME, FONT_SIZE_TABLE
-        )
-        c.drawString(COL_DESCRIPTION_LEFT, y, description)
-        c.drawCentredString(COL_ATC_CENTER, y, atc_code)
-        c.drawRightString(COL_MONTH1_RIGHT, y, _peso(month_amounts[0]) if month_amounts[0] else "")
-        c.drawRightString(COL_MONTH2_RIGHT, y, _peso(month_amounts[1]) if month_amounts[1] else "")
-        c.drawRightString(COL_MONTH3_RIGHT, y, _peso(month_amounts[2]) if month_amounts[2] else "")
+        c.drawString(COL_DESCRIPTION_LEFT, y, item.description)
+        c.drawCentredString(COL_ATC_CENTER, y, item.atc_code)
+        c.drawRightString(COL_MONTH1_RIGHT, y, _peso(item.month_amounts[0]) if item.month_amounts[0] else "")
+        c.drawRightString(COL_MONTH2_RIGHT, y, _peso(item.month_amounts[1]) if item.month_amounts[1] else "")
+        c.drawRightString(COL_MONTH3_RIGHT, y, _peso(item.month_amounts[2]) if item.month_amounts[2] else "")
         c.drawRightString(COL_TOTAL_RIGHT, y, _peso(row_total))
-        c.drawRightString(COL_TAX_RIGHT, y, _peso(tax_for_code))
+        c.drawRightString(COL_TAX_RIGHT, y, _peso(item.tax_withheld))
         row_top += ROW_HEIGHT
 
     c.setFont(FONT_NAME_BOLD, FONT_SIZE_TABLE_BOLD)
@@ -358,16 +368,76 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
     c.drawRightString(COL_TOTAL_RIGHT, total_y, _peso(total_amount))
     c.drawRightString(COL_TAX_RIGHT, total_y, _peso(total_tax))
 
-    c.save()
-    overlay_buffer.seek(0)
+    return total_amount, total_tax
 
+
+def _merge_onto_template(overlay_buffer: io.BytesIO) -> PdfWriter:
+    overlay_buffer.seek(0)
     template_reader = PdfReader(str(TEMPLATE_PATH))
     overlay_reader = PdfReader(overlay_buffer)
     base_page = template_reader.pages[0]
     base_page.merge_page(overlay_reader.pages[0])
-
     writer = PdfWriter()
     writer.add_page(base_page)
+    return writer
+
+
+def generate_certificate_pdf(session: Session, certificate: Certificate, output_dir: Path) -> Path:
+    """Overlay `certificate`'s data onto the official template and save it.
+
+    Transactions are grouped by ATC code (one row per code — spec's
+    "multiple ATC line items per certificate", generated dynamically, not
+    a fixed number of slots) and each transaction's gross amount is
+    bucketed into its quarter month from `invoice_date`, falling back to
+    the period's first month when a transaction has no recorded date.
+    """
+    payee = certificate.payee
+    payor = certificate.payor
+    transactions = (
+        session.query(Transaction)
+        .join(CertificateTransaction, CertificateTransaction.transaction_id == Transaction.id)
+        .filter(CertificateTransaction.certificate_id == certificate.id)
+        .all()
+    )
+
+    by_atc: dict[str, list[Transaction]] = defaultdict(list)
+    for t in transactions:
+        by_atc[t.atc_code].append(t)
+    atc_descriptions = {a.code: a.description for a in session.query(AtcCode).all()}
+
+    line_items = []
+    for atc_code, txs in sorted(by_atc.items()):
+        month_amounts = [Decimal("0"), Decimal("0"), Decimal("0")]
+        tax_for_code = Decimal("0")
+        for t in txs:
+            month_idx = _month_index_in_quarter(t.invoice_date, certificate.period_start)
+            month_amounts[month_idx] += t.gross_amount
+            tax_for_code += t.tax_withheld
+        description = SHORT_DESCRIPTIONS.get(atc_code) or _fit_text(
+            atc_descriptions.get(atc_code) or "", COL_DESCRIPTION_WIDTH, FONT_NAME, FONT_SIZE_TABLE
+        )
+        line_items.append(
+            LineItem(
+                atc_code=atc_code,
+                description=description,
+                month_amounts=tuple(month_amounts),
+                tax_withheld=tax_for_code,
+            )
+        )
+
+    overlay_buffer = io.BytesIO()
+    c = canvas.Canvas(overlay_buffer, pagesize=(letter[0], PAGE_HEIGHT))
+    _draw_overlay(
+        c,
+        period_start=certificate.period_start,
+        period_end=certificate.period_end,
+        payee=PartyFields(tin=payee.tin, name=payee.registered_name, address=payee.address or "", zip_code=payee.zip_code),
+        payor=PartyFields(tin=payor.tin, name=payor.registered_name, address=payor.address or "", zip_code=payor.zip_code),
+        line_items=line_items,
+    )
+    c.save()
+
+    writer = _merge_onto_template(overlay_buffer)
 
     payee_tin_dir = output_dir / payee.tin.replace("/", "-")
     payee_tin_dir.mkdir(parents=True, exist_ok=True)
@@ -376,6 +446,43 @@ def generate_certificate_pdf(session: Session, certificate: Certificate, output_
         writer.write(f)
 
     certificate.pdf_unsigned_path = str(out_path)
+    return out_path
+
+
+def generate_manual_form_pdf(
+    *,
+    period_start: date,
+    period_end: date,
+    payee: PartyFields,
+    payor: PartyFields,
+    line_items: list[LineItem],
+    output_dir: Path,
+) -> Path:
+    """Same official-template overlay as `generate_certificate_pdf`, but
+    from values typed by hand (the "blank BIR 2307 form" manual-entry
+    page) instead of `Payee`/`Payor`/`Transaction` rows — no database
+    session, no Certificate/Transaction records created. Each call writes
+    its own timestamped file; nothing is ever overwritten."""
+    overlay_buffer = io.BytesIO()
+    c = canvas.Canvas(overlay_buffer, pagesize=(letter[0], PAGE_HEIGHT))
+    _draw_overlay(
+        c,
+        period_start=period_start,
+        period_end=period_end,
+        payee=payee,
+        payor=payor,
+        line_items=line_items,
+    )
+    c.save()
+
+    writer = _merge_onto_template(overlay_buffer)
+
+    manual_dir = output_dir / "manual_forms"
+    manual_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    out_path = manual_dir / f"manual_{stamp}.pdf"
+    with open(out_path, "wb") as f:
+        writer.write(f)
     return out_path
 
 

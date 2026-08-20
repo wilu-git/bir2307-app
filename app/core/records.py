@@ -11,17 +11,24 @@ audit intent already applied to certificate status changes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.computation import compute_amount_paid, compute_tax_base, compute_tax_withheld
 from app.core.logging_config import log_event
-from app.core.models import EventCategory, EventSeverity, Payee, Payor, TaxType
+from app.core.models import AtcCode, EventCategory, EventSeverity, Payee, Payor, TaxType, Transaction
 from app.core.security import is_valid_tin, normalize_tin, sanitize_text
 from app.core.text_match import contains_ci, normalize_tin_digits
 
 
 class DuplicateTinError(ValueError):
     """Raised when a payee edit's TIN would collide with a different payee."""
+
+
+class UnknownAtcCodeError(ValueError):
+    """Raised when a transaction edit's ATC code isn't in the rate table."""
 
 
 @dataclass(frozen=True)
@@ -162,3 +169,71 @@ def update_payee(
             technical_detail=f"tin={tin!r}",
         )
     return payee
+
+
+@dataclass(frozen=True)
+class TransactionFields:
+    reference_no: str
+    atc_code: str
+    gross_amount: Decimal
+    total_billing: Decimal
+    invoice_date: datetime | None
+
+
+def update_transaction(
+    session: Session, transaction: Transaction, fields: TransactionFields, changed_by: str
+) -> Transaction:
+    """Overwrite `transaction`'s editable fields, recomputing tax_base/
+    tax_withheld/amount_paid the exact same way the importer does (see
+    `app/core/computation.py`) so an edited transaction stays internally
+    consistent instead of drifting from what a fresh import would produce.
+    Raises UnknownAtcCodeError if `fields.atc_code` isn't in the rate
+    table. Caller is responsible for recomputing any certificate totals
+    and regenerating its PDF afterward — this only touches the row.
+    """
+    atc = session.get(AtcCode, fields.atc_code)
+    if atc is None:
+        raise UnknownAtcCodeError(f'ATC code "{fields.atc_code}" is not in the rate table.')
+
+    before = {
+        "reference_no": transaction.reference_no,
+        "atc_code": transaction.atc_code,
+        "gross_amount": str(transaction.gross_amount),
+        "total_billing": str(transaction.total_billing),
+        "tax_withheld": str(transaction.tax_withheld),
+        "invoice_date": transaction.invoice_date.isoformat() if transaction.invoice_date else None,
+    }
+
+    tax_base = compute_tax_base(fields.gross_amount, transaction.payee.tax_type.value)
+    tax_withheld = compute_tax_withheld(tax_base, atc.default_rate)
+    amount_paid = compute_amount_paid(fields.total_billing, tax_withheld)
+
+    transaction.reference_no = sanitize_text(fields.reference_no) or fields.reference_no
+    transaction.atc_code = fields.atc_code
+    transaction.gross_amount = fields.gross_amount
+    transaction.total_billing = fields.total_billing
+    transaction.tax_base = tax_base
+    transaction.rate_applied = atc.default_rate
+    transaction.tax_withheld = tax_withheld
+    transaction.amount_paid = amount_paid
+    transaction.invoice_date = fields.invoice_date
+
+    after = {
+        "reference_no": transaction.reference_no,
+        "atc_code": transaction.atc_code,
+        "gross_amount": str(transaction.gross_amount),
+        "total_billing": str(transaction.total_billing),
+        "tax_withheld": str(transaction.tax_withheld),
+        "invoice_date": transaction.invoice_date.isoformat() if transaction.invoice_date else None,
+    }
+    diff = _diff(before, after)
+    if diff:
+        log_event(
+            session,
+            category=EventCategory.SYSTEM,
+            severity=EventSeverity.INFO,
+            message=f"Transaction #{transaction.id} record updated by {changed_by}.",
+            technical_detail=diff,
+            transaction_id=transaction.id,
+        )
+    return transaction

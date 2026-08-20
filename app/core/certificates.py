@@ -114,6 +114,14 @@ def group_ungrouped_transactions(session: Session) -> list[Certificate]:
     return touched
 
 
+def recompute_totals(session: Session, certificate: Certificate) -> None:
+    """Public entry point for `_recompute_totals` — used after an inline
+    transaction edit (see app/ui/views/certificates.py) where the caller
+    isn't re-running the grouping pass, just refreshing one certificate's
+    cached sums to match its (possibly just-edited) linked transactions."""
+    _recompute_totals(session, certificate)
+
+
 def _recompute_totals(session: Session, certificate: Certificate) -> None:
     linked = (
         session.query(Transaction)

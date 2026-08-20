@@ -417,6 +417,19 @@ div[role="dialog"] {
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #64748B !important; }
 [data-testid="stSidebar"] hr { border-color: #1E293B !important; }
 
+/* Newer Streamlit wraps st.sidebar's whole content (logo, nav buttons,
+   "Signed in as…", Log out) in the same stVerticalBlockBorderWrapper used
+   for st.container(border=True) elsewhere, which the theme block below
+   paints with the page's card-surface color — #FFFFFF in light mode,
+   #111827 in dark. Against the sidebar's own fixed navy (#0F172A) that's
+   a glaring white card in light mode (barely visible, but still wrong, in
+   dark mode) sitting behind the entire nav. Neutralize it here so the nav
+   always sits directly on the sidebar's own background in both themes. */
+[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: transparent !important;
+    border: none !important;
+}
+
 /* Certificate/Payee list rows: in-page card rows (st.container(border=True)
    + st.columns), used instead of the canvas-rendered st.dataframe grid so
    the list actually reflows on narrow viewports like any other page

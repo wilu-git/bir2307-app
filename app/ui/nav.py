@@ -18,6 +18,7 @@ _NAV_ITEMS = [
     ("certificates", "Certificates"),
     ("payees", "Payees"),
     ("reports", "Reports"),
+    ("manual_form", "Manual Form"),
     ("more", "More"),
 ]
 

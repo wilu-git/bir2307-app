@@ -4,20 +4,20 @@
 — every certificate/payee view that needs to show a generated PDF reuses
 this instead of re-implementing it.
 
-PDF preview approach: base64-encode the already-generated PDF and embed it
-via a data-URI <iframe>. Zero new dependencies, keeps generation (see
-app/core/pdf_generator.py) and preview cleanly separate. Tradeoff: inline
-rendering depends on the viewer's own PDF support (reliable on desktop
-Chrome/Edge/Firefox; some locked-down browsers disable it) — every preview
-is paired with a working Download button as a fallback that always works.
+PDF preview approach: `streamlit-pdf-viewer` (a Streamlit custom component
+that renders via pdf.js in an isolated iframe), replacing an earlier
+base64 data-URI <iframe> embed — that approach depended on the browser's
+own built-in PDF viewer, which some locked-down browsers disable entirely.
+Every preview is still paired with a working Download button as a
+fallback regardless.
 """
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 import streamlit as st
+from streamlit_pdf_viewer import pdf_viewer
 
 from app.core.security import mask_tin
 from app.ui.styles import page_tokens
@@ -35,14 +35,7 @@ def render_pdf_preview(pdf_path: str | Path | None, label: str, key_suffix: str)
         st.info("Preview unavailable — file missing on disk. Use Download once regenerated.")
         return
 
-    border = page_tokens(st.session_state.get("theme", "light"))["border"]
-    b64 = base64.b64encode(data).decode("ascii")
-    st.markdown(
-        f'<iframe src="data:application/pdf;base64,{b64}#toolbar=0" '
-        f'width="100%" height="700" '
-        f'style="border:1px solid {border}; border-radius:8px;"></iframe>',
-        unsafe_allow_html=True,
-    )
+    pdf_viewer(input=data, width="100%", height=700, key=f"pdfview_{key_suffix}")
     st.download_button(
         f"Download {label.lower()}",
         data,

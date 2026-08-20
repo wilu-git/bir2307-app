@@ -31,6 +31,7 @@ from app.ui.nav import render_sidebar
 from app.ui.state import init_session_state
 from app.ui.styles import inject_css
 from app.ui.views.certificates import render_certificates_view
+from app.ui.views.manual_form import render_manual_form_view
 from app.ui.views.more import render_more_view
 from app.ui.views.overview import render_overview_view
 from app.ui.views.payees import render_payees_view
@@ -52,6 +53,7 @@ _VIEW_RENDERERS = {
     "certificates": render_certificates_view,
     "payees": render_payees_view,
     "reports": render_reports_view,
+    "manual_form": render_manual_form_view,
     "more": render_more_view,
 }
 
